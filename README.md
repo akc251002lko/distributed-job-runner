@@ -41,7 +41,7 @@ curl -sS -X POST http://localhost:8080/v1/jobs \
   -d '{"type":"noop","payload":{"source":"readme"}}'
 ```
 
-If `API_TOKEN` is configured, send `Authorization: Bearer <token>`. The worker metrics endpoint is available at `http://localhost:9090/metrics` in the local Compose stack.
+If `API_TOKEN` is configured, send `Authorization: Bearer <token>`. Reusing an idempotency key with a different job type, payload, or attempt limit returns HTTP `409 Conflict`. The worker metrics endpoint is available at `http://localhost:9090/metrics` in the local Compose stack.
 
 ## Delivery semantics
 

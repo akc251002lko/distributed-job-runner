@@ -2,11 +2,11 @@
 
 ## Local startup
 
-Run docker compose up --build. The migration service applies both SQL migrations and provisions separate local API/worker database roles. Check /healthz, /readyz, API /metrics, and worker :9090/metrics.
+Run docker compose up --build. The migration service applies all SQL migrations and provisions separate local API/worker database roles. Check /healthz, /readyz, API /metrics, and worker :9090/metrics.
 
 ## Submit and inspect
 
-Submit using POST /v1/jobs; provide Authorization: Bearer ... when credentials are configured. Use the returned ID with GET /v1/jobs/{id}. Browse with GET /v1/jobs?limit=50&status=pending; follow next_cursor unchanged.
+Submit using POST /v1/jobs; provide Authorization: Bearer ... when credentials are configured. Use the returned ID with GET /v1/jobs/{id}. Browse with GET /v1/jobs?limit=50&status=pending; follow next_cursor unchanged. Every job operation is scoped to the authenticated client identity.
 
 ## Cancel and replay
 

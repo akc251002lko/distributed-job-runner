@@ -5,3 +5,12 @@ func TestLoadDefaults(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","p
 func TestProductionRequiresSeparatedDatabaseAndStrongAuth(t *testing.T){clearConfigEnv(t);t.Setenv("APP_ENV","Production");t.Setenv("API_DATABASE_URL","postgres://api@localhost/djr");t.Setenv("WORKER_DATABASE_URL","postgres://worker@localhost/djr");t.Setenv("API_TOKEN","0123456789abcdef0123456789abcdef");if _,err:=Load();err!=nil{t.Fatalf("valid config rejected: %v",err)};t.Setenv("DATABASE_URL","postgres://owner@localhost/djr");if _,err:=Load();err==nil{t.Fatal("shared production database URL accepted")}}
 func TestAPIKeyValidation(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","postgres://localhost/djr");t.Setenv("API_KEYS","mobile=short");if _,err:=Load();err==nil{t.Fatal("weak key accepted")};t.Setenv("API_KEYS","mobile=0123456789abcdef0123456789abcdef");if _,err:=Load();err!=nil{t.Fatalf("valid key rejected: %v",err)}}
 func TestLeaseAndConcurrencyValidation(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","postgres://localhost/djr");t.Setenv("POLL_INTERVAL","10s");t.Setenv("LEASE_DURATION","20s");if _,err:=Load();err==nil{t.Fatal("short lease accepted")};t.Setenv("POLL_INTERVAL","1s");t.Setenv("LEASE_DURATION","30s");t.Setenv("WORKER_CONCURRENCY","0");if _,err:=Load();err==nil{t.Fatal("zero concurrency accepted")}}
+
+func TestAPIKeyClientIDsAreValidated(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DATABASE_URL","postgres://localhost/djr")
+	t.Setenv("API_KEYS","bad id=0123456789abcdef0123456789abcdef")
+	if _,err:=Load();err==nil{t.Fatal("invalid client ID accepted")}
+	t.Setenv("API_KEYS","mobile=0123456789abcdef0123456789abcdef,mobile=abcdef0123456789abcdef0123456789")
+	if _,err:=Load();err==nil{t.Fatal("duplicate client ID accepted")}
+}

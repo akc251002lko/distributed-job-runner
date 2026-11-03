@@ -118,3 +118,20 @@ func TestListCancelAndReplayLifecycle(t *testing.T) {
 	if replayed.ID==first.ID||replayed.Status!="pending"||replayed.Attempts!=0{t.Fatalf("unexpected replay: %+v",replayed)}
 	if _,err=db.Replay(ctx,replayed.ID);!errors.Is(err,ErrInvalidTransition){t.Fatalf("replay of pending job error = %v, want ErrInvalidTransition",err)}
 }
+
+
+func TestClientDataIsolationAndScopedIdempotency(t *testing.T) {
+	db,ctx:=integrationStore(t)
+	key:=fmt.Sprintf("tenant-key-%d",time.Now().UnixNano())
+	a,err:=db.EnqueueForClient(ctx,"tenant-a","noop",json.RawMessage("{}"),key,2,time.Now().UTC())
+	if err!=nil{t.Fatalf("enqueue tenant a: %v",err)}
+	b,err:=db.EnqueueForClient(ctx,"tenant-b","noop",json.RawMessage("{}"),key,2,time.Now().UTC())
+	if err!=nil{t.Fatalf("same key for tenant b should be independent: %v",err)}
+	if a.ID==b.ID{t.Fatal("different clients received the same job")}
+	if _,err:=db.GetForClient(ctx,"tenant-b",a.ID);!errors.Is(err,ErrNotFound){t.Fatalf("cross-client get error = %v",err)}
+	page,err:=db.ListForClient(ctx,"tenant-b",100,"","")
+	if err!=nil{t.Fatalf("tenant b list: %v",err)}
+	for _,item:=range page.Items{if item.ID==a.ID{t.Fatal("tenant b list exposed tenant a job")}}
+	if _,err:=db.CancelForClient(ctx,"tenant-b",a.ID);!errors.Is(err,ErrNotFound){t.Fatalf("cross-client cancel error = %v",err)}
+	if _,err:=db.ReplayForClient(ctx,"tenant-b",a.ID);!errors.Is(err,ErrNotFound){t.Fatalf("cross-client replay error = %v",err)}
+}

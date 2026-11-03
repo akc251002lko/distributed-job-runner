@@ -11,7 +11,7 @@ This project is an MVP and is not independently audited. Do not expose the devel
 ## Deployment requirements
 
 - Use TLS and private networking.
-- Set APP_ENV=production, strong API credentials (32+ characters), and separate API_DATABASE_URL and WORKER_DATABASE_URL credentials.
+- Set APP_ENV=production, strong API credentials (32+ characters), and separate API_DATABASE_URL and WORKER_DATABASE_URL credentials. Client IDs must be unique and are used as tenant boundaries.
 - Provision djr_api and djr_worker using ops/postgres/roles.sql; never run application processes as the database owner.
 - Store secrets in a secret manager and rotate them.
 - Restrict health and metrics endpoints to trusted monitoring networks.

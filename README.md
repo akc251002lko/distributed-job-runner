@@ -65,7 +65,7 @@ Replay is allowed only for succeeded, dead, or cancelled jobs. It creates a new 
 ## Authentication and rate limiting
 
 - Set API_TOKEN for one shared bearer credential.
-- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs receive independent rate-limit buckets.
+- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs are tenant boundaries: jobs can only be listed, read, cancelled, or replayed by their owning client. Idempotency keys are scoped per client, and each client receives an independent rate-limit bucket.
 - API_RATE_LIMIT_RPS and API_RATE_LIMIT_BURST configure the in-process token bucket (defaults 10 and 20).
 - Rate limits are per API process, not globally coordinated across replicas. Put a gateway/shared limiter in front of a horizontally scaled public API.
 - Health/readiness/metrics are not protected by bearer authentication; restrict their network exposure.
@@ -82,6 +82,7 @@ Apply migrations in order as a database owner:
 
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000002_job_cancellation.sql
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000003_client_scoping.sql
 
 Provision separate API and worker roles using strong unique passwords:
 

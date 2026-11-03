@@ -15,6 +15,20 @@ A durable PostgreSQL-backed distributed job processing service written in Go.
 - Separate least-privilege API and worker database roles.
 - Structured logs, health/readiness endpoints, Prometheus metrics, Docker Compose, non-root containers, CI, and Dependabot.
 
+## What Is This Repository For?
+
+This repository is a reference implementation of a durable, PostgreSQL-backed job-processing service. It is intended for applications that need to enqueue background work over HTTP and process it asynchronously with multiple worker processes, retry and recovery behavior, tenant isolation, and operational visibility. Execution is at-least-once, so application handlers must be designed for idempotency.
+
+## How to Use
+
+For local development, review `.env.example`, ensure Go 1.22+ and Docker Compose are available, then start the stack with:
+
+```bash
+docker compose up --build
+```
+
+Check API health and readiness at `/healthz` and `/readyz`. Submit work to `POST /v1/jobs` using the bearer-authentication configuration described below. Apply database migrations and provision the separate API and worker roles before running outside the local development setup. See the HTTP API, authentication, database roles, and operational-limit sections for endpoint details and production requirements.
+
 ## Components
 
 - cmd/api — authenticated HTTP API.

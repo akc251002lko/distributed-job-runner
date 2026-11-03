@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+*.log
+coverage.out
+coverage.html
+bin/
+dist/
+.DS_Store
+.idea/
+.vscode/

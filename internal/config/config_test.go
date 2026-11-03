@@ -1,0 +1,16 @@
+package config
+import("testing";"time")
+func clearConfigEnv(t *testing.T){t.Helper();for _,k:=range []string{"DATABASE_URL","API_DATABASE_URL","WORKER_DATABASE_URL","APP_ENV","API_TOKEN","API_KEYS","POLL_INTERVAL","LEASE_DURATION","WORKER_CONCURRENCY","API_RATE_LIMIT_RPS","API_RATE_LIMIT_BURST"}{t.Setenv(k,"")}}
+func TestLoadDefaults(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","postgres://localhost/djr");c,err:=Load();if err!=nil{t.Fatalf("Load(): %v",err)};if c.PollInterval!=time.Second||c.LeaseDuration!=30*time.Second||c.WorkerConcurrency!=4{t.Fatalf("unexpected defaults: %+v",c)}}
+func TestProductionRequiresSeparatedDatabaseAndStrongAuth(t *testing.T){clearConfigEnv(t);t.Setenv("APP_ENV","Production");t.Setenv("API_DATABASE_URL","postgres://api@localhost/djr");t.Setenv("WORKER_DATABASE_URL","postgres://worker@localhost/djr");t.Setenv("API_TOKEN","0123456789abcdef0123456789abcdef");if _,err:=Load();err!=nil{t.Fatalf("valid config rejected: %v",err)};t.Setenv("DATABASE_URL","postgres://owner@localhost/djr");if _,err:=Load();err==nil{t.Fatal("shared production database URL accepted")}}
+func TestAPIKeyValidation(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","postgres://localhost/djr");t.Setenv("API_KEYS","mobile=short");if _,err:=Load();err==nil{t.Fatal("weak key accepted")};t.Setenv("API_KEYS","mobile=0123456789abcdef0123456789abcdef");if _,err:=Load();err!=nil{t.Fatalf("valid key rejected: %v",err)}}
+func TestLeaseAndConcurrencyValidation(t *testing.T){clearConfigEnv(t);t.Setenv("DATABASE_URL","postgres://localhost/djr");t.Setenv("POLL_INTERVAL","10s");t.Setenv("LEASE_DURATION","20s");if _,err:=Load();err==nil{t.Fatal("short lease accepted")};t.Setenv("POLL_INTERVAL","1s");t.Setenv("LEASE_DURATION","30s");t.Setenv("WORKER_CONCURRENCY","0");if _,err:=Load();err==nil{t.Fatal("zero concurrency accepted")}}
+
+func TestAPIKeyClientIDsAreValidated(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DATABASE_URL","postgres://localhost/djr")
+	t.Setenv("API_KEYS","bad id=0123456789abcdef0123456789abcdef")
+	if _,err:=Load();err==nil{t.Fatal("invalid client ID accepted")}
+	t.Setenv("API_KEYS","mobile=0123456789abcdef0123456789abcdef,mobile=abcdef0123456789abcdef0123456789")
+	if _,err:=Load();err==nil{t.Fatal("duplicate client ID accepted")}
+}

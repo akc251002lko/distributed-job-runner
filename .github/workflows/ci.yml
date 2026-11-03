@@ -42,8 +42,8 @@ jobs:
           cache: true
       - name: Download Go dependencies
         run: go mod download
-      - name: Capture module checksums
-        run: cat go.sum
+      - name: Verify downloaded modules
+        run: go mod verify
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply schema

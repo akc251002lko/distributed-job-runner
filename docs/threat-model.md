@@ -16,7 +16,7 @@ HTTP clients are untrusted. The API rejects unknown JSON fields, limits request 
 | Oversized/malformed requests | 1 MiB cap, strict JSON decoding, field validation | Rate limiting |
 | SQL injection | Parameterized pgx queries | Review future queries |
 | Duplicate execution | At-least-once contract; idempotency keys | Downstream idempotency helpers |
-| Stale worker state writes | Lease-token fencing | Heartbeat renewal and lease-loss cancellation |
+| Stale worker state writes | Lease-token fencing, periodic lease renewal, and cancellation after lease loss | Downstream side effects still require idempotency |
 | Secret leakage | Environment config; local env ignored by Git | Secret manager and redaction review |
 | Database compromise | Isolated local Compose network | Least-privilege roles, TLS, encryption, backups |
 | Malicious payload | No arbitrary code execution | Per-handler payload schemas |

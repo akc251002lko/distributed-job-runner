@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -19,8 +20,8 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	c := Config{AppEnv: env("APP_ENV", "development"), DatabaseURL: os.Getenv("DATABASE_URL"),
-		APIAddr: env("API_ADDR", ":8080"), WorkerMetricsAddr: env("WORKER_METRICS_ADDR", ":9090"), APIToken: os.Getenv("API_TOKEN"), WorkerID: env("WORKER_ID", "worker-local")}
+	c := Config{AppEnv: strings.ToLower(strings.TrimSpace(env("APP_ENV", "development"))), DatabaseURL: os.Getenv("DATABASE_URL"),
+		APIAddr: env("API_ADDR", ":8080"), WorkerMetricsAddr: env("WORKER_METRICS_ADDR", ":9090"), APIToken: strings.TrimSpace(os.Getenv("API_TOKEN")), WorkerID: env("WORKER_ID", "worker-local")}
 	if c.DatabaseURL == "" { return Config{}, errors.New("DATABASE_URL is required") }
 	var err error
 	c.PollInterval, err = duration("POLL_INTERVAL", time.Second); if err != nil { return Config{}, err }
@@ -28,7 +29,7 @@ func Load() (Config, error) {
 	if c.PollInterval <= 0 { return Config{}, errors.New("POLL_INTERVAL must be positive") }
 	if c.LeaseDuration < 3*c.PollInterval { return Config{}, errors.New("LEASE_DURATION must be at least three times POLL_INTERVAL") }
 	if c.WorkerID == "" { return Config{}, errors.New("WORKER_ID must not be empty") }
-	if c.AppEnv == "production" && c.APIToken == "" { return Config{}, errors.New("API_TOKEN is required in production") }
+	if c.AppEnv == "production" && len(c.APIToken) < 32 { return Config{}, errors.New("API_TOKEN must contain at least 32 characters in production") }
 	return c, nil
 }
 func env(k, fallback string) string { if v:=os.Getenv(k); v!="" { return v }; return fallback }

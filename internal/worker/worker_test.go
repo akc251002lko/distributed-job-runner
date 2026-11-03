@@ -11,7 +11,7 @@ import (
 func TestExecuteSupportedAndUnsupportedTypes(t *testing.T) {
 	ctx:=context.Background()
 	if err:=execute(ctx,job.Job{Type:"noop"});err!=nil{t.Fatalf("noop: %v",err)}
-	if err:=execute(ctx,job.Job{Type:"echo"});err!=nil{t.Fatalf("echo: %v",err)}
+	if err:=execute(ctx,job.Job{Type:"echo",Payload:[]byte("{}")});err!=nil{t.Fatalf("echo: %v",err)}
 	if err:=execute(ctx,job.Job{Type:"unregistered"});err==nil{t.Fatal("expected unsupported job type to fail")}
 }
 func TestExecuteHonorsCancellation(t *testing.T) {

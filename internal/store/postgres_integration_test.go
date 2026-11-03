@@ -70,7 +70,7 @@ func TestConcurrentClaimsAreUnique(t *testing.T) {
 			t.Fatalf("enqueue job %d: %v",i,err)
 		}
 	}
-	type claimResult struct { id string; err error }
+	type claimResult struct { id string; token string; err error }
 	results:=make(chan claimResult,count)
 	var wg sync.WaitGroup
 	for i:=0;i<count;i++ {
@@ -80,7 +80,7 @@ func TestConcurrentClaimsAreUnique(t *testing.T) {
 			claimCtx,cancel:=context.WithTimeout(ctx,10*time.Second)
 			defer cancel()
 			j,err:=db.Claim(claimCtx,fmt.Sprintf("concurrent-worker-%d",worker),30*time.Second)
-			results<-claimResult{id:j.ID,err:err}
+			results<-claimResult{id:j.ID,token:j.LeaseToken,err:err}
 		}(i)
 	}
 	wg.Wait()
@@ -91,6 +91,7 @@ func TestConcurrentClaimsAreUnique(t *testing.T) {
 		if result.id=="" { t.Fatal("concurrent claim returned no job") }
 		if _,exists:=seen[result.id];exists { t.Fatalf("job %s was claimed more than once",result.id) }
 		seen[result.id]=struct{}{}
+		if err:=db.Complete(ctx,result.id,result.token);err!=nil { t.Fatalf("complete claimed job %s: %v",result.id,err) }
 	}
 	if len(seen)!=count { t.Fatalf("unique claims = %d, want %d",len(seen),count) }
 }

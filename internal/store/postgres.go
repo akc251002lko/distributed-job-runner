@@ -50,15 +50,23 @@ func(s *Store) Claim(ctx context.Context,worker string,lease time.Duration)(job.
 	err=s.pool.QueryRow(ctx,q,worker,token,lease.String()).Scan(&j.ID,&j.Type,&j.Payload,&j.Status,&j.Attempts,&j.MaxAttempts,&j.RunAt,&j.CreatedAt,&j.UpdatedAt,&j.LeaseExpiresAt,&j.LastError,&j.WorkerID,&j.LeaseToken)
 	if errors.Is(err,pgx.ErrNoRows){return job.Job{},nil}; return j,err
 }
+func(s *Store) RenewLease(ctx context.Context,id,token string,lease time.Duration)error{
+	tag,err:=s.pool.Exec(ctx,`UPDATE jobs SET lease_expires_at=now()+$3::interval,updated_at=now()
+		WHERE id=$1 AND status='running' AND lease_token=$2 AND lease_expires_at>now()`,id,token,lease.String())
+	if err!=nil{return fmt.Errorf("renew job lease: %w",err)}
+	if tag.RowsAffected()!=1{return errors.New("job lease lost or expired")}
+	return nil
+}
 func(s *Store) Complete(ctx context.Context,id,token string)error{
-	tag,err:=s.pool.Exec(ctx,`UPDATE jobs SET status='succeeded',completed_at=now(),lease_token=NULL,lease_expires_at=NULL,worker_id=NULL,updated_at=now() WHERE id=$1 AND status='running' AND lease_token=$2`,id,token)
-	if err!=nil{return err}; if tag.RowsAffected()!=1{return errors.New("job lease lost before completion")}; return nil
+	tag,err:=s.pool.Exec(ctx,`UPDATE jobs SET status='succeeded',completed_at=now(),lease_token=NULL,lease_expires_at=NULL,worker_id=NULL,updated_at=now()
+		WHERE id=$1 AND status='running' AND lease_token=$2 AND lease_expires_at>now()`,id,token)
+	if err!=nil{return err}; if tag.RowsAffected()!=1{return errors.New("job lease lost or expired before completion")}; return nil
 }
 func(s *Store) Fail(ctx context.Context,id,token,message string,delay time.Duration)error{
 	tag,err:=s.pool.Exec(ctx,`UPDATE jobs SET status=CASE WHEN attempts>=max_attempts THEN 'dead' ELSE 'pending' END,
 	run_at=CASE WHEN attempts>=max_attempts THEN run_at ELSE now()+$4::interval END,last_error=left($3,4000),
 	lease_token=NULL,lease_expires_at=NULL,worker_id=NULL,updated_at=now()
-	WHERE id=$1 AND status='running' AND lease_token=$2`,id,token,message,delay.String())
+	WHERE id=$1 AND status='running' AND lease_token=$2 AND lease_expires_at>now()`,id,token,message,delay.String())
 	if err!=nil{return err}; if tag.RowsAffected()!=1{return errors.New("job lease lost before failure update")}; return nil
 }
 func scan(row pgx.Row)(job.Job,error){

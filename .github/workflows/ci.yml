@@ -54,7 +54,11 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
-      - name: Build
+      - name: Build Go binaries
         run: |
           go build -trimpath ./cmd/api
           go build -trimpath ./cmd/worker
+      - name: Build API container
+        run: docker build --build-arg APP=api -t djr-api:ci .
+      - name: Build worker container
+        run: docker build --build-arg APP=worker -t djr-worker:ci .

@@ -34,6 +34,7 @@ func(s *Store) Enqueue(ctx context.Context, kind string, payload json.RawMessage
 	VALUES($1,$2,$3,NULLIF($4,''),'pending',$5,$6)
 	ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL
 	DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
+		WHERE jobs.job_type=EXCLUDED.job_type AND jobs.payload=EXCLUDED.payload AND jobs.max_attempts=EXCLUDED.max_attempts
 	RETURNING id,job_type,payload,status,attempts,max_attempts,run_at,created_at,updated_at,lease_expires_at,COALESCE(last_error,''),COALESCE(worker_id,'')`
 	result,err:=scan(s.pool.QueryRow(ctx,q,id,kind,[]byte(payload),key,max,runAt))
 	if errors.Is(err,pgx.ErrNoRows) { return job.Job{},ErrIdempotencyConflict }

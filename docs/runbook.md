@@ -6,6 +6,7 @@
 2. Start the stack with `docker compose up --build`.
 3. Wait for PostgreSQL health and the one-shot migration service to complete.
 4. Check `GET http://localhost:8080/healthz` and `GET http://localhost:8080/readyz`.
+5. Check API metrics at `http://localhost:8080/metrics` and worker metrics at `http://localhost:9090/metrics`.
 
 ## Submit and inspect a job
 
@@ -24,11 +25,12 @@ Use the returned ID with `GET /v1/jobs/{id}`. If `API_TOKEN` is configured, send
 - **Jobs remain pending:** confirm the worker is running and inspect worker logs.
 - **Jobs become dead:** inspect `last_error`, `attempts`, and `max_attempts`; confirm the handler type is supported.
 - **Jobs are reclaimed:** investigate worker restarts and lease duration. Reclaim may cause duplicate execution; handler side effects must be idempotent.
+- **Lease-loss metric increases:** investigate database latency, worker CPU starvation, lease duration, and competing workers. The affected attempt is abandoned; the job is eligible for recovery after lease expiry.
 - **Database unavailable:** restore PostgreSQL connectivity before restarting processes; persisted pending jobs remain in the database.
 
 ## Shutdown and recovery
 
-Send SIGTERM. The API drains active requests; the worker stops polling. A process killed during execution may leave a running lease that becomes eligible for reclaim after expiry. External side effects are not rolled back.
+Send SIGTERM. The API drains active requests; the worker stops polling and cancels the active handler context. A process killed during execution may leave a running lease that becomes eligible for reclaim after expiry. External side effects are not rolled back.
 
 ## Production caution
 

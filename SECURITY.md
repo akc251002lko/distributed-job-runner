@@ -12,4 +12,4 @@ Do not disclose exploitable vulnerabilities in public issues. Use GitHub's **Rep
 
 Security-sensitive areas include HTTP authentication and validation, SQL queries, lease ownership, retry handling, dependency updates, container configuration, and secret handling.
 
-Default Compose credentials and unauthenticated local API settings are strictly for local development. Production requires `APP_ENV=production` and a non-empty `API_TOKEN`, plus TLS, private networking, secret storage, database permissions, and monitoring.
+Default Compose credentials and unauthenticated local API settings are strictly for local development. Production requires `APP_ENV=production` and an `API_TOKEN` of at least 32 characters, plus TLS, private networking, secret storage, database permissions, and monitoring.

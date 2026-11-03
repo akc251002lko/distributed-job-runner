@@ -9,5 +9,5 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/app ./c
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/app /app
 USER nonroot:nonroot
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app"]

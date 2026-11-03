@@ -127,10 +127,10 @@ Compose credentials are for local development only. Production requires TLS, sec
 
 GitHub Actions provisions PostgreSQL 16 and verifies migrations, application-role grants, formatting, go vet, race-enabled tests, Go builds, and both container images.
 
+## Community & Support
+
+For official project announcements, release and repository updates, technical discussions, questions, and collaboration, join the [Telegram community](https://t.me/githubakc251002lko).
+
 ## License
 
 Apache License 2.0. See LICENSE.
-
-## Community
-
-For project announcements, repository updates, technical discussions, questions, and collaboration, visit the [official Telegram channel](https://t.me/githubakc251002lko).

@@ -15,6 +15,7 @@ import (
 )
 
 var ErrNotFound = errors.New("job not found")
+var ErrIdempotencyConflict = errors.New("idempotency key already used with different job data")
 type Store struct { pool *pgxpool.Pool }
 
 func Open(ctx context.Context, url string) (*Store,error) {
@@ -34,7 +35,9 @@ func(s *Store) Enqueue(ctx context.Context, kind string, payload json.RawMessage
 	ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL
 	DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
 	RETURNING id,job_type,payload,status,attempts,max_attempts,run_at,created_at,updated_at,lease_expires_at,COALESCE(last_error,''),COALESCE(worker_id,'')`
-	return scan(s.pool.QueryRow(ctx,q,id,kind,[]byte(payload),key,max,runAt))
+	result,err:=scan(s.pool.QueryRow(ctx,q,id,kind,[]byte(payload),key,max,runAt))
+	if errors.Is(err,pgx.ErrNoRows) { return job.Job{},ErrIdempotencyConflict }
+	return result,err
 }
 func(s *Store) Get(ctx context.Context,id string)(job.Job,error){
 	q:=`SELECT id,job_type,payload,status,attempts,max_attempts,run_at,created_at,updated_at,lease_expires_at,COALESCE(last_error,''),COALESCE(worker_id,'') FROM jobs WHERE id=$1`

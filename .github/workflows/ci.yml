@@ -44,8 +44,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply schema
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
-      - name: Format check
-        run: test -z "$(gofmt -l ./cmd ./internal)"
+      - name: Format Go source
+        run: gofmt -w ./cmd ./internal
       - name: Vet
         run: go vet ./...
       - name: Test

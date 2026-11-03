@@ -14,7 +14,7 @@ Assets include job payloads/state, client credentials, database credentials, lea
 | Excessive worker load | Configurable bounded concurrency | Handler-specific resource limits remain application responsibility |
 | Stale worker writes | Lease-token fencing and heartbeat renewal | External side effects require idempotency |
 | Cancellation race | Cancellation invalidates lease; handler context cancelled after heartbeat | Cooperative only; cannot forcibly stop a handler |
-| Privilege escalation | Separate API/worker roles with column-scoped updates | Migration owner credentials remain highly privileged |
+| Privilege escalation | Separate API/worker roles, column-scoped updates, and forced row-level security for client-scoped API operations | Migration owner credentials remain highly privileged |
 | Secret leakage | Environment-based configuration; ignored local env file | Use a secret manager and redaction review |
 | Trace spoofing | Trace ID is correlation metadata, not authorization | Do not trust trace context as identity |
 | Malicious payload | Typed handler registry; no arbitrary code execution | Each handler must validate its own payload schema |

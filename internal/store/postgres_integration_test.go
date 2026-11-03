@@ -117,6 +117,7 @@ func TestListCancelAndReplayLifecycle(t *testing.T) {
 	if err!=nil{t.Fatalf("replay: %v",err)}
 	if replayed.ID==first.ID||replayed.Status!="pending"||replayed.Attempts!=0{t.Fatalf("unexpected replay: %+v",replayed)}
 	if _,err=db.Replay(ctx,replayed.ID);!errors.Is(err,ErrInvalidTransition){t.Fatalf("replay of pending job error = %v, want ErrInvalidTransition",err)}
+	if _,err=db.Cancel(ctx,replayed.ID);err!=nil{t.Fatalf("cleanup replayed job: %v",err)}
 }
 
 
@@ -134,4 +135,25 @@ func TestClientDataIsolationAndScopedIdempotency(t *testing.T) {
 	for _,item:=range page.Items{if item.ID==a.ID{t.Fatal("tenant b list exposed tenant a job")}}
 	if _,err:=db.CancelForClient(ctx,"tenant-b",a.ID);!errors.Is(err,ErrNotFound){t.Fatalf("cross-client cancel error = %v",err)}
 	if _,err:=db.ReplayForClient(ctx,"tenant-b",a.ID);!errors.Is(err,ErrNotFound){t.Fatalf("cross-client replay error = %v",err)}
+}
+
+
+func TestWorkerDatabaseRoleCanClaimAndCompleteAcrossClients(t *testing.T) {
+	apiDSN:=os.Getenv("API_DATABASE_URL")
+	workerDSN:=os.Getenv("WORKER_DATABASE_URL")
+	if apiDSN==""||workerDSN==""{t.Skip("API_DATABASE_URL and WORKER_DATABASE_URL are required")}
+	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second)
+	t.Cleanup(cancel)
+	apiDB,err:=Open(ctx,apiDSN)
+	if err!=nil{t.Fatalf("open API role: %v",err)}
+	t.Cleanup(apiDB.Close)
+	workerDB,err:=Open(ctx,workerDSN)
+	if err!=nil{t.Fatalf("open worker role: %v",err)}
+	t.Cleanup(workerDB.Close)
+	job,err:=apiDB.EnqueueForClient(ctx,"worker-tenant","noop",json.RawMessage("{}"),fmt.Sprintf("worker-role-%d",time.Now().UnixNano()),1,time.Now().UTC())
+	if err!=nil{t.Fatalf("enqueue through API role: %v",err)}
+	claimed,err:=workerDB.Claim(ctx,"restricted-worker",30*time.Second)
+	if err!=nil{t.Fatalf("claim through worker role: %v",err)}
+	if claimed.ID!=job.ID{t.Fatalf("worker claimed %s, want %s",claimed.ID,job.ID)}
+	if err:=workerDB.Complete(ctx,claimed.ID,claimed.LeaseToken);err!=nil{t.Fatalf("complete through worker role: %v",err)}
 }

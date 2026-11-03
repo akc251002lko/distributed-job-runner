@@ -65,7 +65,7 @@ Replay is allowed only for succeeded, dead, or cancelled jobs. It creates a new 
 ## Authentication and rate limiting
 
 - Set API_TOKEN for one shared bearer credential.
-- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs are tenant boundaries: jobs can only be listed, read, cancelled, or replayed by their owning client. Idempotency keys are scoped per client, and each client receives an independent rate-limit bucket.
+- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs are tenant boundaries: jobs can only be listed, read, cancelled, or replayed by their owning client. Idempotency keys are scoped per client, and each client receives an independent rate-limit bucket. PostgreSQL row-level security enforces ownership using transaction-local client identity.
 - API_RATE_LIMIT_RPS and API_RATE_LIMIT_BURST configure the in-process token bucket (defaults 10 and 20).
 - Rate limits are per API process, not globally coordinated across replicas. Put a gateway/shared limiter in front of a horizontally scaled public API.
 - Health/readiness/metrics are not protected by bearer authentication; restrict their network exposure.
@@ -88,7 +88,7 @@ Provision separate API and worker roles using strong unique passwords:
 
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v api_password="$API_DB_PASSWORD" -v worker_password="$WORKER_DB_PASSWORD" -f ops/postgres/roles.sql
 
-Configure API_DATABASE_URL and WORKER_DATABASE_URL separately. Production mode rejects the shared DATABASE_URL fallback. API role can select/insert and cancel jobs; worker role can select and update execution state. Keep migration credentials separate and never use the database owner in application processes.
+Configure API_DATABASE_URL and WORKER_DATABASE_URL separately. Production mode rejects the shared DATABASE_URL fallback. API role can select/insert and cancel jobs under row-level security; worker role can select and update execution state across tenants. Keep migration credentials separate and never use the database owner in application processes.
 
 ## Local development
 

@@ -32,7 +32,7 @@ Delivery is at-least-once. Handler side effects must be idempotent; exactly-once
 
 ## Database privileges
 
-The migration owner provisions djr_api and djr_worker. The API role can select/insert and update only cancellation/idempotency columns. The worker role can select and update only claim/lease/execution columns. Neither application role can perform DDL or delete rows.
+The migration owner provisions djr_api and djr_worker. The API role can select/insert and update only cancellation/idempotency columns. Row-level security binds API queries to transaction-local app.client_id. The worker role has an explicit all-tenant policy but can update only claim/lease/execution columns. Neither application role can perform DDL or delete rows.
 
 ## Remaining production integration
 

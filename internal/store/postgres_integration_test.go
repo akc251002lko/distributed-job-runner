@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"sync"
 )
 
 func integrationStore(t *testing.T)(*Store,context.Context){
@@ -54,4 +55,38 @@ func TestEnqueueIdempotencyLeaseRenewalAndRecovery(t *testing.T) {
 	if afterExpiry.ID!=""{t.Fatalf("exhausted job was reclaimed: %s",afterExpiry.ID)}
 	deadState,err:=db.Get(ctx,deadJob.ID);if err!=nil{t.Fatalf("read exhausted job: %v",err)}
 	if deadState.Status!="dead"{t.Fatalf("exhausted job status = %s, want dead",deadState.Status)}
+}
+
+func TestConcurrentClaimsAreUnique(t *testing.T) {
+	db,ctx:=integrationStore(t)
+	const count=8
+	for i:=0;i<count;i++ {
+		key:=fmt.Sprintf("concurrent-claim-%d-%d",time.Now().UnixNano(),i)
+		if _,err:=db.Enqueue(ctx,"noop",json.RawMessage(`{"concurrent":true}`),key,3,time.Now().UTC());err!=nil {
+			t.Fatalf("enqueue job %d: %v",i,err)
+		}
+	}
+	type claimResult struct { id string; err error }
+	results:=make(chan claimResult,count)
+	var wg sync.WaitGroup
+	for i:=0;i<count;i++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			claimCtx,cancel:=context.WithTimeout(ctx,10*time.Second)
+			defer cancel()
+			j,err:=db.Claim(claimCtx,fmt.Sprintf("concurrent-worker-%d",worker),30*time.Second)
+			results<-claimResult{id:j.ID,err:err}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	seen:=make(map[string]struct{},count)
+	for result:=range results {
+		if result.err!=nil { t.Fatalf("concurrent claim: %v",result.err) }
+		if result.id=="" { t.Fatal("concurrent claim returned no job") }
+		if _,exists:=seen[result.id];exists { t.Fatalf("job %s was claimed more than once",result.id) }
+		seen[result.id]=struct{}{}
+	}
+	if len(seen)!=count { t.Fatalf("unique claims = %d, want %d",len(seen),count) }
 }

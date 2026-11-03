@@ -42,7 +42,7 @@ func(s *Store) Get(ctx context.Context,id string)(job.Job,error){
 }
 func(s *Store) Claim(ctx context.Context,worker string,lease time.Duration)(job.Job,error){
 	token,err:=newID(); if err!=nil{return job.Job{},err}
-	q:=`WITH candidate AS (SELECT id FROM jobs WHERE (status='pending' AND run_at<=now()) OR (status='running' AND lease_expires_at<now()) ORDER BY run_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+	q:=`WITH candidate AS (SELECT id FROM jobs WHERE (status='pending' AND run_at<=now()) OR (status='running' AND lease_expires_at<now()) ORDER BY run_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
 	UPDATE jobs j SET status='running',attempts=j.attempts+1,worker_id=$1,lease_token=$2,lease_expires_at=now()+$3::interval,updated_at=now()
 	FROM candidate WHERE j.id=candidate.id
 	RETURNING j.id,j.job_type,j.payload,j.status,j.attempts,j.max_attempts,j.run_at,j.created_at,j.updated_at,j.lease_expires_at,COALESCE(j.last_error,''),COALESCE(j.worker_id,''),j.lease_token`

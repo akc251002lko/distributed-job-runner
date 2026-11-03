@@ -54,6 +54,9 @@ services:
       WORKER_ID: local-worker-1
       POLL_INTERVAL: 1s
       LEASE_DURATION: 30s
+      WORKER_METRICS_ADDR: :9090
+    ports:
+      - "9090:9090"
     depends_on:
       migrate:
         condition: service_completed_successfully

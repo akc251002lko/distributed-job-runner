@@ -35,6 +35,7 @@ func run(logger *slog.Logger)error {
 	go func(){runnerErr<-worker.New(db,cfg.WorkerID,cfg.PollInterval,cfg.LeaseDuration,logger).Run(ctx)}()
 
 	var runnerResult error
+	var metricsFailure error
 	runnerFinished:=false
 	select {
 	case <-ctx.Done():
@@ -43,7 +44,7 @@ func run(logger *slog.Logger)error {
 		stop()
 	case serveErr:=<-metricsErr:
 		logger.Error("worker metrics server failed","error",serveErr)
-		runnerResult=serveErr
+		metricsFailure=serveErr
 		stop()
 	}
 	shutdownCtx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
@@ -54,6 +55,6 @@ func run(logger *slog.Logger)error {
 		case <-shutdownCtx.Done():return shutdownCtx.Err()
 		}
 	}
-	if runnerResult==nil { return nil }
+	if metricsFailure!=nil{return metricsFailure}
 	return runnerResult
 }

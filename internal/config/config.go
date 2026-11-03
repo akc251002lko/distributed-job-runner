@@ -11,6 +11,7 @@ type Config struct {
 	AppEnv string
 	DatabaseURL string
 	APIAddr string
+	WorkerMetricsAddr string
 	APIToken string
 	WorkerID string
 	PollInterval time.Duration
@@ -19,7 +20,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{AppEnv: env("APP_ENV", "development"), DatabaseURL: os.Getenv("DATABASE_URL"),
-		APIAddr: env("API_ADDR", ":8080"), APIToken: os.Getenv("API_TOKEN"), WorkerID: env("WORKER_ID", "worker-local")}
+		APIAddr: env("API_ADDR", ":8080"), WorkerMetricsAddr: env("WORKER_METRICS_ADDR", ":9090"), APIToken: os.Getenv("API_TOKEN"), WorkerID: env("WORKER_ID", "worker-local")}
 	if c.DatabaseURL == "" { return Config{}, errors.New("DATABASE_URL is required") }
 	var err error
 	c.PollInterval, err = duration("POLL_INTERVAL", time.Second); if err != nil { return Config{}, err }

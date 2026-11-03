@@ -43,6 +43,7 @@ func run(logger *slog.Logger)error {
 		stop()
 	case serveErr:=<-metricsErr:
 		logger.Error("worker metrics server failed","error",serveErr)
+		runnerResult=serveErr
 		stop()
 	}
 	shutdownCtx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel()
@@ -53,5 +54,6 @@ func run(logger *slog.Logger)error {
 		case <-shutdownCtx.Done():return shutdownCtx.Err()
 		}
 	}
+	if runnerResult==nil { return nil }
 	return runnerResult
 }

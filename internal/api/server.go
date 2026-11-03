@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akc251002lko/distributed-job-runner/internal/observability"
 	"github.com/akc251002lko/distributed-job-runner/internal/store"
 )
 
@@ -23,7 +24,7 @@ type enqueueRequest struct {
 }
 func New(db *store.Store, logger *slog.Logger, token string) http.Handler {
 	s:=&Server{store:db,logger:logger,token:token}; mux:=http.NewServeMux()
-	mux.HandleFunc("GET /healthz",s.health); mux.HandleFunc("GET /readyz",s.ready)
+	mux.HandleFunc("GET /healthz",s.health); mux.HandleFunc("GET /readyz",s.ready); mux.Handle("GET /metrics",observability.Handler())
 	mux.Handle("POST /v1/jobs",s.auth(http.HandlerFunc(s.enqueue)))
 	mux.Handle("GET /v1/jobs/{id}",s.auth(http.HandlerFunc(s.getJob)))
 	return requestLog(logger,mux)
@@ -50,6 +51,7 @@ func(s *Server) enqueue(w http.ResponseWriter,r *http.Request){
 	if len(key)>255{writeError(w,http.StatusBadRequest,"idempotency key must be at most 255 characters");return}
 	result,err:=s.store.Enqueue(r.Context(),in.Type,in.Payload,key,in.MaxAttempts,runAt)
 	if err!=nil{s.logger.Error("enqueue failed","error",err);writeError(w,http.StatusInternalServerError,"could not enqueue job");return}
+	observability.Default.JobsEnqueued.Add(1)
 	writeJSON(w,http.StatusAccepted,result)
 }
 func(s *Server) getJob(w http.ResponseWriter,r *http.Request){
@@ -60,4 +62,4 @@ func(s *Server) getJob(w http.ResponseWriter,r *http.Request){
 }
 func writeJSON(w http.ResponseWriter,status int,value any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_ = json.NewEncoder(w).Encode(value)}
 func writeError(w http.ResponseWriter,status int,message string){writeJSON(w,status,map[string]string{"error":message})}
-func requestLog(logger *slog.Logger,next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){start:=time.Now();next.ServeHTTP(w,r);logger.Info("http request","method",r.Method,"path",r.URL.Path,"duration",time.Since(start))})}
+func requestLog(logger *slog.Logger,next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){start:=time.Now();observability.Default.HTTPRequests.Add(1);next.ServeHTTP(w,r);logger.Info("http request","method",r.Method,"path",r.URL.Path,"duration",time.Since(start))})}

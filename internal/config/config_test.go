@@ -22,3 +22,12 @@ func TestLeaseMustExceedPollingWindow(t *testing.T) {
 	t.Setenv("POLL_INTERVAL","10s");t.Setenv("LEASE_DURATION","20s")
 	if _,err:=Load();err==nil{t.Fatal("expected short lease to fail")}
 }
+
+func TestProductionRequiresStrongTokenCaseInsensitively(t *testing.T) {
+	t.Setenv("DATABASE_URL","postgres://localhost/djr")
+	t.Setenv("APP_ENV","Production")
+	t.Setenv("API_TOKEN","too-short")
+	if _,err:=Load();err==nil { t.Fatal("expected short production token to fail") }
+	t.Setenv("API_TOKEN","0123456789abcdef0123456789abcdef")
+	if _,err:=Load();err!=nil { t.Fatalf("valid production token rejected: %v",err) }
+}

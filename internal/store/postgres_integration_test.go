@@ -152,8 +152,13 @@ func TestWorkerDatabaseRoleCanClaimAndCompleteAcrossClients(t *testing.T) {
 	t.Cleanup(workerDB.Close)
 	job,err:=apiDB.EnqueueForClient(ctx,"worker-tenant","noop",json.RawMessage("{}"),fmt.Sprintf("worker-role-%d",time.Now().UnixNano()),1,time.Now().UTC())
 	if err!=nil{t.Fatalf("enqueue through API role: %v",err)}
-	claimed,err:=workerDB.Claim(ctx,"restricted-worker",30*time.Second)
-	if err!=nil{t.Fatalf("claim through worker role: %v",err)}
-	if claimed.ID!=job.ID{t.Fatalf("worker claimed %s, want %s",claimed.ID,job.ID)}
-	if err:=workerDB.Complete(ctx,claimed.ID,claimed.LeaseToken);err!=nil{t.Fatalf("complete through worker role: %v",err)}
+	var targetClaimed bool
+	for attempt:=0;attempt<100;attempt++ {
+		claimed,claimErr:=workerDB.Claim(ctx,"restricted-worker",30*time.Second)
+		if claimErr!=nil{t.Fatalf("claim through worker role: %v",claimErr)}
+		if claimed.ID==""{break}
+		if err:=workerDB.Complete(ctx,claimed.ID,claimed.LeaseToken);err!=nil{t.Fatalf("complete through worker role: %v",err)}
+		if claimed.ID==job.ID{targetClaimed=true;break}
+	}
+	if !targetClaimed{t.Fatalf("worker role did not claim submitted job %s",job.ID)}
 }

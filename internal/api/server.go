@@ -1,66 +1,27 @@
 package api
-
-import (
-	"crypto/subtle"
-	"encoding/json"
-	"errors"
-	"io"
-	"log/slog"
-	"net/http"
-	"strings"
-	"time"
-
-	"github.com/akc251002lko/distributed-job-runner/internal/observability"
-	"github.com/akc251002lko/distributed-job-runner/internal/store"
-)
-
-type Server struct { store *store.Store; logger *slog.Logger; token string }
-type enqueueRequest struct {
-	Type string `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-	IdempotencyKey string `json:"idempotency_key"`
-	MaxAttempts int `json:"max_attempts"`
-	RunAt *time.Time `json:"run_at"`
-}
-func New(db *store.Store, logger *slog.Logger, token string) http.Handler {
-	s:=&Server{store:db,logger:logger,token:token}; mux:=http.NewServeMux()
-	mux.HandleFunc("GET /healthz",s.health); mux.HandleFunc("GET /readyz",s.ready); mux.Handle("GET /metrics",observability.Handler())
-	mux.Handle("POST /v1/jobs",s.auth(http.HandlerFunc(s.enqueue)))
-	mux.Handle("GET /v1/jobs/{id}",s.auth(http.HandlerFunc(s.getJob)))
-	return requestLog(logger,mux)
-}
-func(s *Server) auth(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-	if s.token==""{next.ServeHTTP(w,r);return}
-	provided:=strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")
-	if subtle.ConstantTimeCompare([]byte(provided),[]byte(s.token))!=1{writeError(w,http.StatusUnauthorized,"unauthorized");return}
-	next.ServeHTTP(w,r)
-})}
-func(s *Server) health(w http.ResponseWriter,_ *http.Request){writeJSON(w,http.StatusOK,map[string]string{"status":"ok"})}
-func(s *Server) ready(w http.ResponseWriter,r *http.Request){if err:=s.store.Ping(r.Context());err!=nil{writeError(w,http.StatusServiceUnavailable,"database unavailable");return};writeJSON(w,http.StatusOK,map[string]string{"status":"ready"})}
-func(s *Server) enqueue(w http.ResponseWriter,r *http.Request){
-	r.Body=http.MaxBytesReader(w,r.Body,1<<20); dec:=json.NewDecoder(r.Body);dec.DisallowUnknownFields()
-	var in enqueueRequest
-	if err:=dec.Decode(&in);err!=nil{writeError(w,http.StatusBadRequest,"invalid JSON request");return}
-	if err:=dec.Decode(&struct{}{});!errors.Is(err,io.EOF){writeError(w,http.StatusBadRequest,"request must contain one JSON object");return}
-	if strings.TrimSpace(in.Type)==""||len(in.Type)>128{writeError(w,http.StatusBadRequest,"type is required and must be at most 128 characters");return}
-	if len(in.Payload)==0{in.Payload=json.RawMessage("{}")}
-	if !json.Valid(in.Payload){writeError(w,http.StatusBadRequest,"payload must be valid JSON");return}
-	if in.MaxAttempts==0{in.MaxAttempts=5};if in.MaxAttempts<1||in.MaxAttempts>100{writeError(w,http.StatusBadRequest,"max_attempts must be between 1 and 100");return}
-	runAt:=time.Now().UTC();if in.RunAt!=nil{runAt=in.RunAt.UTC()}
-	key:=in.IdempotencyKey;if key==""{key=r.Header.Get("Idempotency-Key")}
-	if len(key)>255{writeError(w,http.StatusBadRequest,"idempotency key must be at most 255 characters");return}
-	result,err:=s.store.Enqueue(r.Context(),in.Type,in.Payload,key,in.MaxAttempts,runAt)
-	if errors.Is(err,store.ErrIdempotencyConflict){writeError(w,http.StatusConflict,"idempotency key was already used with different job data");return}
-	if err!=nil{s.logger.Error("enqueue failed","error",err);writeError(w,http.StatusInternalServerError,"could not enqueue job");return}
-	observability.Default.JobsEnqueued.Add(1)
-	writeJSON(w,http.StatusAccepted,result)
-}
-func(s *Server) getJob(w http.ResponseWriter,r *http.Request){
-	result,err:=s.store.Get(r.Context(),r.PathValue("id"))
-	if errors.Is(err,store.ErrNotFound){writeError(w,http.StatusNotFound,"job not found");return}
-	if err!=nil{s.logger.Error("get job failed","error",err);writeError(w,http.StatusInternalServerError,"could not retrieve job");return}
-	writeJSON(w,http.StatusOK,result)
-}
+import("context";"crypto/rand";"crypto/subtle";"encoding/hex";"encoding/json";"errors";"io";"log/slog";"net/http";"strconv";"strings";"sync";"time";"github.com/akc251002lko/distributed-job-runner/internal/observability";"github.com/akc251002lko/distributed-job-runner/internal/store")
+type contextKey string
+const clientKey contextKey="client_id"
+const traceKey contextKey="trace_id"
+type Server struct{store *store.Store;logger *slog.Logger;token string;apiKeys map[string]string;limiter *rateLimiter}
+type enqueueRequest struct{Type string `json:"type"`;Payload json.RawMessage `json:"payload"`;IdempotencyKey string `json:"idempotency_key"`;MaxAttempts int `json:"max_attempts"`;RunAt *time.Time `json:"run_at"`}
+type rateBucket struct{tokens float64;last time.Time}
+type rateLimiter struct{mu sync.Mutex;buckets map[string]rateBucket;rate float64;burst float64}
+func newRateLimiter(rate float64,burst int)*rateLimiter{return &rateLimiter{buckets:make(map[string]rateBucket),rate:rate,burst:float64(burst)}}
+func(l *rateLimiter)allow(key string)bool{now:=time.Now();l.mu.Lock();defer l.mu.Unlock();b:=l.buckets[key];if b.last.IsZero(){b.tokens=l.burst;b.last=now};b.tokens+=now.Sub(b.last).Seconds()*l.rate;if b.tokens>l.burst{b.tokens=l.burst};b.last=now;if b.tokens<1{l.buckets[key]=b;return false};b.tokens--;l.buckets[key]=b;return true}
+func New(db *store.Store,logger *slog.Logger,token,keys string,rate float64,burst int)http.Handler{apiKeys:=make(map[string]string);for _,entry:=range strings.Split(keys,","){parts:=strings.SplitN(strings.TrimSpace(entry),"=",2);if len(parts)==2&&parts[0]!=""{apiKeys[parts[0]]=parts[1]}};s:=&Server{store:db,logger:logger,token:token,apiKeys:apiKeys,limiter:newRateLimiter(rate,burst)};mux:=http.NewServeMux();mux.HandleFunc("GET /healthz",s.health);mux.HandleFunc("GET /readyz",s.ready);mux.Handle("GET /metrics",observability.Handler());protected:=func(h http.Handler)http.Handler{return s.auth(s.rateLimit(h))};mux.Handle("POST /v1/jobs",protected(http.HandlerFunc(s.enqueue)));mux.Handle("GET /v1/jobs",protected(http.HandlerFunc(s.listJobs)));mux.Handle("GET /v1/jobs/{id}",protected(http.HandlerFunc(s.getJob)));mux.Handle("POST /v1/jobs/{id}/cancel",protected(http.HandlerFunc(s.cancelJob)));mux.Handle("POST /v1/jobs/{id}/replay",protected(http.HandlerFunc(s.replayJob)));return traceRequests(requestLog(logger,mux))}
+func(s *Server)auth(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){auth:=strings.TrimSpace(r.Header.Get("Authorization"));provided:="";if strings.HasPrefix(auth,"Bearer "){provided=strings.TrimSpace(strings.TrimPrefix(auth,"Bearer "))};clientID:="anonymous";if len(s.apiKeys)>0{authorized:=false;for id,token:=range s.apiKeys{if subtle.ConstantTimeCompare([]byte(provided),[]byte(token))==1{clientID=id;authorized=true}};if !authorized{writeError(w,http.StatusUnauthorized,"unauthorized");return}}else if s.token!=""{if subtle.ConstantTimeCompare([]byte(provided),[]byte(s.token))!=1{writeError(w,http.StatusUnauthorized,"unauthorized");return};clientID="default"};ctx:=context.WithValue(r.Context(),clientKey,clientID);w.Header().Set("X-Client-ID",clientID);next.ServeHTTP(w,r.WithContext(ctx))})}
+func(s *Server)rateLimit(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){id,_:=r.Context().Value(clientKey).(string);if !s.limiter.allow(id){w.Header().Set("Retry-After","1");writeError(w,http.StatusTooManyRequests,"rate limit exceeded");return};next.ServeHTTP(w,r)})}
+func(s *Server)health(w http.ResponseWriter,_ *http.Request){writeJSON(w,http.StatusOK,map[string]string{"status":"ok"})}
+func(s *Server)ready(w http.ResponseWriter,r *http.Request){if err:=s.store.Ping(r.Context());err!=nil{writeError(w,http.StatusServiceUnavailable,"database unavailable");return};writeJSON(w,http.StatusOK,map[string]string{"status":"ready"})}
+func(s *Server)enqueue(w http.ResponseWriter,r *http.Request){r.Body=http.MaxBytesReader(w,r.Body,1<<20);dec:=json.NewDecoder(r.Body);dec.DisallowUnknownFields();var in enqueueRequest;if err:=dec.Decode(&in);err!=nil{writeError(w,http.StatusBadRequest,"invalid JSON request");return};if err:=dec.Decode(&struct{}{});!errors.Is(err,io.EOF){writeError(w,http.StatusBadRequest,"request must contain one JSON object");return};if strings.TrimSpace(in.Type)==""||len(in.Type)>128{writeError(w,http.StatusBadRequest,"type is required and must be at most 128 characters");return};if len(in.Payload)==0{in.Payload=json.RawMessage("{}")};if !json.Valid(in.Payload){writeError(w,http.StatusBadRequest,"payload must be valid JSON");return};if in.MaxAttempts==0{in.MaxAttempts=5};if in.MaxAttempts<1||in.MaxAttempts>100{writeError(w,http.StatusBadRequest,"max_attempts must be between 1 and 100");return};runAt:=time.Now().UTC();if in.RunAt!=nil{runAt=in.RunAt.UTC()};key:=in.IdempotencyKey;if key==""{key=r.Header.Get("Idempotency-Key")};if len(key)>255{writeError(w,http.StatusBadRequest,"idempotency key must be at most 255 characters");return};result,err:=s.store.Enqueue(r.Context(),in.Type,in.Payload,key,in.MaxAttempts,runAt);if errors.Is(err,store.ErrIdempotencyConflict){writeError(w,http.StatusConflict,"idempotency key was already used with different job data");return};if err!=nil{s.logger.Error("enqueue failed","error",err);writeError(w,http.StatusInternalServerError,"could not enqueue job");return};observability.Default.JobsEnqueued.Add(1);writeJSON(w,http.StatusAccepted,result)}
+func(s *Server)listJobs(w http.ResponseWriter,r *http.Request){limit:=50;if raw:=r.URL.Query().Get("limit");raw!=""{n,err:=strconv.Atoi(raw);if err!=nil||n<1||n>100{writeError(w,http.StatusBadRequest,"limit must be between 1 and 100");return};limit=n};status:=r.URL.Query().Get("status");switch status{case "","pending","running","succeeded","dead","cancelled":default:writeError(w,http.StatusBadRequest,"invalid status filter");return};page,err:=s.store.List(r.Context(),limit,status,r.URL.Query().Get("cursor"));if err!=nil{writeError(w,http.StatusBadRequest,"invalid pagination cursor or query");return};writeJSON(w,http.StatusOK,map[string]any{"items":page.Items,"next_cursor":page.NextCursor})}
+func(s *Server)getJob(w http.ResponseWriter,r *http.Request){result,err:=s.store.Get(r.Context(),r.PathValue("id"));if errors.Is(err,store.ErrNotFound){writeError(w,http.StatusNotFound,"job not found");return};if err!=nil{s.logger.Error("get job failed","error",err);writeError(w,http.StatusInternalServerError,"could not retrieve job");return};writeJSON(w,http.StatusOK,result)}
+func(s *Server)cancelJob(w http.ResponseWriter,r *http.Request){result,err:=s.store.Cancel(r.Context(),r.PathValue("id"));if errors.Is(err,store.ErrNotFound){writeError(w,http.StatusNotFound,"job not found");return};if errors.Is(err,store.ErrInvalidTransition){writeError(w,http.StatusConflict,"job cannot be cancelled in its current state");return};if err!=nil{s.logger.Error("cancel job failed","error",err);writeError(w,http.StatusInternalServerError,"could not cancel job");return};writeJSON(w,http.StatusOK,result)}
+func(s *Server)replayJob(w http.ResponseWriter,r *http.Request){result,err:=s.store.Replay(r.Context(),r.PathValue("id"));if errors.Is(err,store.ErrNotFound){writeError(w,http.StatusNotFound,"job not found");return};if errors.Is(err,store.ErrInvalidTransition){writeError(w,http.StatusConflict,"only completed, dead, or cancelled jobs can be replayed");return};if err!=nil{s.logger.Error("replay job failed","error",err);writeError(w,http.StatusInternalServerError,"could not replay job");return};writeJSON(w,http.StatusAccepted,result)}
 func writeJSON(w http.ResponseWriter,status int,value any){w.Header().Set("Content-Type","application/json");w.WriteHeader(status);_ = json.NewEncoder(w).Encode(value)}
 func writeError(w http.ResponseWriter,status int,message string){writeJSON(w,status,map[string]string{"error":message})}
-func requestLog(logger *slog.Logger,next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){start:=time.Now();observability.Default.HTTPRequests.Add(1);next.ServeHTTP(w,r);logger.Info("http request","method",r.Method,"path",r.URL.Path,"duration",time.Since(start))})}
+func traceRequests(next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){traceID:="";raw:=r.Header.Get("traceparent");if len(raw)==55&&raw[2]=='-'&&raw[35]=='-'{traceID=raw[3:35];if _,err:=hex.DecodeString(traceID);err!=nil{traceID=""}};if traceID==""{var b [16]byte;if _,err:=rand.Read(b[:]);err==nil{traceID=hex.EncodeToString(b[:])}else{traceID="00000000000000000000000000000000"}};var span [8]byte;_,_=rand.Read(span[:]);w.Header().Set("X-Request-ID",traceID);w.Header().Set("traceparent","00-"+traceID+"-"+hex.EncodeToString(span[:])+"-01");ctx:=context.WithValue(r.Context(),traceKey,traceID);next.ServeHTTP(w,r.WithContext(ctx))})}
+type statusWriter struct{http.ResponseWriter;status int}
+func(w *statusWriter)WriteHeader(status int){w.status=status;w.ResponseWriter.WriteHeader(status)}
+func requestLog(logger *slog.Logger,next http.Handler)http.Handler{return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){start:=time.Now();observability.Default.HTTPRequests.Add(1);sw:=&statusWriter{ResponseWriter:w,status:http.StatusOK};next.ServeHTTP(sw,r);traceID,_:=r.Context().Value(traceKey).(string);logger.Info("http request","method",r.Method,"path",r.URL.Path,"status",sw.status,"duration",time.Since(start),"trace_id",traceID)})}

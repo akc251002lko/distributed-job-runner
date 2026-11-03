@@ -1,4 +1,4 @@
-.PHONY: test test-race fmt vet build migrate-up compose-up compose-down
+.PHONY: test test-race fmt vet build migrate-up provision-roles compose-up compose-down
 
 test:
 	go test ./...
@@ -19,6 +19,10 @@ build:
 
 migrate-up:
 	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
+	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000002_job_cancellation.sql
+
+provision-roles:
+	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -v api_password="$(API_DB_PASSWORD)" -v worker_password="$(WORKER_DB_PASSWORD)" -f ops/postgres/roles.sql
 
 compose-up:
 	docker compose up --build

@@ -2,36 +2,38 @@
 
 ## Local startup
 
-1. Copy `.env.example` to `.env` and review the local-only settings.
-2. Start the stack with `docker compose up --build`.
-3. Wait for PostgreSQL health and the one-shot migration service to complete.
-4. Check `GET http://localhost:8080/healthz` and `GET http://localhost:8080/readyz`.
-5. Check API metrics at `http://localhost:8080/metrics` and worker metrics at `http://localhost:9090/metrics`.
+Run docker compose up --build. The migration service applies both SQL migrations and provisions separate local API/worker database roles. Check /healthz, /readyz, API /metrics, and worker :9090/metrics.
 
-## Submit and inspect a job
+## Submit and inspect
 
-```sh
-curl -sS -X POST http://localhost:8080/v1/jobs \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: sample-001' \
-  -d '{"type":"noop","payload":{"source":"runbook"}}'
-```
+Submit using POST /v1/jobs; provide Authorization: Bearer ... when credentials are configured. Use the returned ID with GET /v1/jobs/{id}. Browse with GET /v1/jobs?limit=50&status=pending; follow next_cursor unchanged.
 
-Use the returned ID with `GET /v1/jobs/{id}`. If `API_TOKEN` is configured, send `Authorization: Bearer <token>`.
+## Cancel and replay
+
+POST to /v1/jobs/{id}/cancel to cancel a pending/running job. Running handlers are asked to stop through context cancellation after the heartbeat observes the invalidated lease. A handler that ignores cancellation may continue external work; side effects are never rolled back.
+
+POST to /v1/jobs/{id}/replay to create a fresh job from a succeeded, dead, or cancelled job. It receives a new ID and starts with zero attempts.
+
+## Scaling
+
+Set WORKER_CONCURRENCY between 1 and 256 for per-process handler concurrency. Scale worker replicas horizontally. Choose lease duration based on database latency and scheduling delays; heartbeat interval is one-third of the lease. Each worker process exposes its own metrics endpoint, so scrape every replica.
+
+API token-bucket limits are per process. For multiple API replicas, enforce global quotas at an API gateway or shared limiter.
 
 ## Troubleshooting
 
-- **API not ready:** inspect API logs and confirm PostgreSQL health/connectivity.
-- **Jobs remain pending:** confirm the worker is running and inspect worker logs.
-- **Jobs become dead:** inspect `last_error`, `attempts`, and `max_attempts`; confirm the handler type is supported.
-- **Jobs are reclaimed:** investigate worker restarts and lease duration. Reclaim may cause duplicate execution; handler side effects must be idempotent.
-- **Lease-loss metric increases:** investigate database latency, worker CPU starvation, lease duration, and competing workers. The affected attempt is abandoned; the job is eligible for recovery after lease expiry.
-- **Database unavailable:** restore PostgreSQL connectivity before restarting processes; persisted pending jobs remain in the database.
+- API not ready: inspect API logs and PostgreSQL connectivity.
+- Jobs pending: check worker replicas, concurrency, supported handler type, and DB permissions.
+- Jobs dead: inspect last_error, attempts, and max_attempts.
+- Jobs repeatedly reclaimed: inspect worker restarts, handler cancellation behavior, database latency, CPU starvation, and lease duration.
+- 401: verify bearer token or API_KEYS client mapping.
+- 429: tune per-process RPS/burst or enforce shared limits at the gateway.
+- Database permission denied: verify API/worker connection strings use matching roles and re-run grants as migration owner.
 
 ## Shutdown and recovery
 
-Send SIGTERM. The API drains active requests; the worker stops polling and cancels the active handler context. A process killed during execution may leave a running lease that becomes eligible for reclaim after expiry. External side effects are not rolled back.
+Send SIGTERM. API drains requests; worker stops claiming and cancels active handler contexts. Jobs with active leases are recovered after expiry if the worker exits before recording a terminal state. External side effects are not rolled back.
 
 ## Production caution
 
-Compose credentials and unauthenticated local defaults are for development only. Before production use, configure TLS, strong unique credentials, API authentication, private networking, database least-privilege roles, backups, monitoring, resource limits, and a reviewed migration/rollback procedure. Do not expose this stack directly to the public internet.
+Local Compose credentials are not production secrets. Use separate strong database passwords, TLS, private networking, a secret manager, backups, monitoring, resource limits, and a reviewed migration/rollback plan. Do not expose metrics or health endpoints publicly.

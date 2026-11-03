@@ -33,6 +33,10 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://djr:djr-test@localhost:5432/djr?sslmode=disable
+      API_DATABASE_URL: postgres://djr_api:local-api-ci@localhost:5432/djr?sslmode=disable
+      WORKER_DATABASE_URL: postgres://djr_worker:local-worker-ci@localhost:5432/djr?sslmode=disable
+      API_DB_PASSWORD: local-api-ci
+      WORKER_DB_PASSWORD: local-worker-ci
       APP_ENV: development
     steps:
       - uses: actions/checkout@v4
@@ -47,13 +51,25 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply schema
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000002_job_cancellation.sql
+      - name: Provision least-privilege application roles
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v api_password="$API_DB_PASSWORD" -v worker_password="$WORKER_DB_PASSWORD" -f ops/postgres/roles.sql
       - name: Format Go source
         run: gofmt -w ./cmd ./internal
       - name: Vet
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Verify API role privileges
+        run: |
+          result=$(PGPASSWORD="$API_DB_PASSWORD" psql "$API_DATABASE_URL" -At -c "SELECT has_table_privilege(current_user,'jobs','SELECT') AND has_table_privilege(current_user,'jobs','INSERT') AND has_column_privilege(current_user,'jobs','status','UPDATE') AND NOT has_table_privilege(current_user,'jobs','DELETE') AND NOT has_column_privilege(current_user,'jobs','payload','UPDATE')")
+          test "$result" = "t"
+      - name: Verify worker role privileges
+        run: |
+          result=$(PGPASSWORD="$WORKER_DB_PASSWORD" psql "$WORKER_DATABASE_URL" -At -c "SELECT has_table_privilege(current_user,'jobs','SELECT') AND has_column_privilege(current_user,'jobs','lease_token','UPDATE') AND NOT has_table_privilege(current_user,'jobs','INSERT') AND NOT has_table_privilege(current_user,'jobs','DELETE') AND NOT has_column_privilege(current_user,'jobs','payload','UPDATE')")
+          test "$result" = "t"
       - name: Build Go binaries
         run: |
           go build -trimpath ./cmd/api

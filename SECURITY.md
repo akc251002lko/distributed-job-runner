@@ -1,15 +1,24 @@
 # Security Policy
 
-## Supported versions
+## Reporting
 
-Until a stable release policy is published, security fixes target the latest development branch.
+Do not open public issues for suspected vulnerabilities. Use GitHub's private vulnerability reporting for this repository when enabled, or contact repository maintainers privately.
 
-## Reporting a vulnerability
+## Supported security posture
 
-Do not disclose exploitable vulnerabilities in public issues. Use GitHub's **Report a vulnerability** feature on this repository to submit a private advisory. Include affected commit/version, impact, reproduction steps, and suggested mitigation. Never include real credentials or personal data.
+This project is an MVP and is not independently audited. Do not expose the development Compose stack to the public internet.
 
-## Scope
+## Deployment requirements
 
-Security-sensitive areas include HTTP authentication and validation, SQL queries, lease ownership, retry handling, dependency updates, container configuration, and secret handling.
+- Use TLS and private networking.
+- Set APP_ENV=production, strong API credentials (32+ characters), and separate API_DATABASE_URL and WORKER_DATABASE_URL credentials.
+- Provision djr_api and djr_worker using ops/postgres/roles.sql; never run application processes as the database owner.
+- Store secrets in a secret manager and rotate them.
+- Restrict health and metrics endpoints to trusted monitoring networks.
+- Apply resource limits and request gateway controls. The built-in rate limiter is process-local.
+- Back up PostgreSQL and test restoration.
+- Review migrations and rollback procedures before deployment.
 
-Default Compose credentials and unauthenticated local API settings are strictly for local development. Production requires `APP_ENV=production` and an `API_TOKEN` of at least 32 characters, plus TLS, private networking, secret storage, database permissions, and monitoring.
+## Execution model
+
+Handlers receive a context and JSON payload. They must validate payload schemas, honor cancellation, bound resource use, and make external side effects idempotent. Cancellation is cooperative; it does not roll back side effects.

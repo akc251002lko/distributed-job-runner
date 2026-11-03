@@ -3,30 +3,36 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: djr
-      POSTGRES_USER: djr
-      POSTGRES_PASSWORD: djr-local-only
+      POSTGRES_USER: djr_owner
+      POSTGRES_PASSWORD: djr-owner-local-only
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U djr -d djr"]
+      test: ["CMD-SHELL", "pg_isready -U djr_owner -d djr"]
       interval: 5s
       timeout: 3s
       retries: 10
-
   migrate:
     image: postgres:16-alpine
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      PGPASSWORD: djr-local-only
+      PGPASSWORD: djr-owner-local-only
+      API_DB_PASSWORD: local-api-only
+      WORKER_DB_PASSWORD: local-worker-only
     volumes:
       - ./migrations:/migrations:ro
+      - ./ops/postgres:/ops/postgres:ro
     entrypoint: ["/bin/sh", "-c"]
-    command: ["psql -h postgres -U djr -d djr -v ON_ERROR_STOP=1 -f /migrations/000001_init.sql"]
-
+    command:
+      - |
+        set -eu
+        psql -h postgres -U djr_owner -d djr -v ON_ERROR_STOP=1 -f /migrations/000001_init.sql
+        psql -h postgres -U djr_owner -d djr -v ON_ERROR_STOP=1 -f /migrations/000002_job_cancellation.sql
+        psql -h postgres -U djr_owner -d djr -v ON_ERROR_STOP=1 -v api_password="$API_DB_PASSWORD" -v worker_password="$WORKER_DB_PASSWORD" -f /ops/postgres/roles.sql
   api:
     build:
       context: .
@@ -34,15 +40,16 @@ services:
         APP: api
     environment:
       APP_ENV: development
-      DATABASE_URL: postgres://djr:djr-local-only@postgres:5432/djr?sslmode=disable
+      API_DATABASE_URL: postgres://djr_api:local-api-only@postgres:5432/djr?sslmode=disable
       API_ADDR: :8080
+      API_RATE_LIMIT_RPS: 10
+      API_RATE_LIMIT_BURST: 20
     depends_on:
       migrate:
         condition: service_completed_successfully
     ports:
       - "8080:8080"
     restart: unless-stopped
-
   worker:
     build:
       context: .
@@ -50,8 +57,9 @@ services:
         APP: worker
     environment:
       APP_ENV: development
-      DATABASE_URL: postgres://djr:djr-local-only@postgres:5432/djr?sslmode=disable
-      WORKER_ID: local-worker-1
+      WORKER_DATABASE_URL: postgres://djr_worker:local-worker-only@postgres:5432/djr?sslmode=disable
+      WORKER_ID: local-worker
+      WORKER_CONCURRENCY: 4
       POLL_INTERVAL: 1s
       LEASE_DURATION: 30s
       WORKER_METRICS_ADDR: :9090
@@ -61,6 +69,5 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-
 volumes:
   postgres-data:

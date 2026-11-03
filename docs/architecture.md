@@ -2,35 +2,38 @@
 
 ## Components
 
-- **API:** validates HTTP requests, applies optional bearer-token authentication, and persists jobs.
-- **Worker:** polls PostgreSQL, atomically claims eligible jobs, renews active leases, executes registered job types, and records success or failure.
-- **PostgreSQL 16:** durable source of truth for job state, retry scheduling, idempotency, and leases.
-- **Metrics:** each process exposes Prometheus text metrics for its own counters; API metrics are served at `/metrics`, worker metrics on its configured metrics listener.
-
-The API and worker are independent processes. No in-memory queue is authoritative.
+- API validates requests, authenticates clients, rate limits per client, persists jobs, and exposes list/get/cancel/replay operations.
+- Workers run a bounded number of handlers concurrently, claim jobs atomically, renew leases, and record success/failure.
+- PostgreSQL 16 is the durable source of truth.
+- API and worker use separate restricted database roles.
+- API and worker expose process-local Prometheus metrics.
 
 ## Claim and fencing protocol
 
-A single PostgreSQL statement first moves expired running jobs that exhausted their attempts to `dead`, then selects an eligible job with `FOR UPDATE SKIP LOCKED`. The claim update assigns a random lease token, worker ID, expiry, and increments the attempt count.
+A PostgreSQL statement marks expired running jobs at their attempt limit as dead, then claims an eligible row with FOR UPDATE SKIP LOCKED. Claim assigns a random lease token and expiry. Renew, complete, and fail require the current token and a live lease. Cancellation clears the lease; the worker heartbeat detects ownership loss and cancels the handler context.
 
-The worker renews the lease every one-third of the lease duration. Renewal, completion, and failure require the exact lease token and an unexpired lease. A stale worker cannot renew or mutate state after a newer worker reclaims the job. If renewal fails, the worker cancels the handler context and abandons the attempt.
+## Handler registry and concurrency
 
-## Delivery guarantees
+The worker registry maps a bounded job type name to a Go handler accepting context.Context and JSON payload. The runner starts a configured number of polling loops. The registry is process-local and handlers must be compiled into the worker binary. Payload data is never evaluated as code.
 
-This is **at-least-once** delivery. A worker may perform an external side effect and crash before recording success. Handlers must be idempotent or pass a downstream idempotency key. Exactly-once side effects are not promised.
+## API security and tracing
 
-## Initial handlers
+Bearer credentials can be configured as one API token or a list of client IDs and tokens. Tokens are compared in constant time. Each authenticated client has a token-bucket limiter in each API process. The limiter is local; multi-replica deployments need a gateway or shared limiter.
 
-- `noop`: completes without side effects.
-- `echo`: example job type; currently validates dispatch and completes.
-- Unknown types fail and follow the retry/dead-letter lifecycle.
+The HTTP middleware accepts W3C traceparent context, creates a trace ID when absent, returns X-Request-ID, and logs the trace ID. There is no span exporter in this MVP.
 
-Payloads are data only. The system never executes arbitrary payload content.
+## Pagination, cancellation, and replay
 
-## Data model and indexes
+List uses stable descending (created_at,id) keyset pagination. Cursors are base64url-encoded opaque values and should be passed unchanged. Cancellation transitions pending/running jobs to cancelled and invalidates the lease. Replay creates a new job row from a terminal source job, with attempts reset and no inherited idempotency key.
 
-The `jobs` table stores JSONB payload, status, attempt limits, scheduled time, lease metadata, worker ID, and last error. Partial indexes support pending claims, expired-lease recovery, and unique non-null idempotency keys.
+## Delivery semantics
 
-## Known MVP gaps
+Delivery is at-least-once. Handler side effects must be idempotent; exactly-once external effects are not promised. A cancellation request is cooperative and cannot roll back already-issued side effects.
 
-A production handler registry, bounded concurrent execution, job listing/pagination, cancellation/replay APIs, per-client authorization/rate limiting, tracing, and least-privilege database roles remain planned work. Handlers must honor context cancellation and remain idempotent.
+## Database privileges
+
+The migration owner provisions djr_api and djr_worker. The API role can select/insert and update only cancellation/idempotency columns. The worker role can select and update only claim/lease/execution columns. Neither application role can perform DDL or delete rows.
+
+## Remaining production integration
+
+Use an external OpenTelemetry exporter, gateway/shared rate limiter, secret manager, TLS, backup/restore drills, and deployment-specific resource policies before public production use.

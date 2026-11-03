@@ -95,3 +95,26 @@ func TestConcurrentClaimsAreUnique(t *testing.T) {
 	}
 	if len(seen)!=count { t.Fatalf("unique claims = %d, want %d",len(seen),count) }
 }
+
+
+func TestListCancelAndReplayLifecycle(t *testing.T) {
+	db,ctx:=integrationStore(t)
+	key1:=fmt.Sprintf("lifecycle-a-%d",time.Now().UnixNano())
+	key2:=fmt.Sprintf("lifecycle-b-%d",time.Now().UnixNano())
+	first,err:=db.Enqueue(ctx,"noop",json.RawMessage("{\"lifecycle\":1}"),key1,3,time.Now().UTC())
+	if err!=nil{t.Fatalf("enqueue first: %v",err)}
+	second,err:=db.Enqueue(ctx,"noop",json.RawMessage("{\"lifecycle\":2}"),key2,3,time.Now().UTC())
+	if err!=nil{t.Fatalf("enqueue second: %v",err)}
+	if _,err=db.Cancel(ctx,first.ID);err!=nil{t.Fatalf("cancel: %v",err)}
+	if _,err=db.Cancel(ctx,second.ID);err!=nil{t.Fatalf("cancel second: %v",err)}
+	page,err:=db.List(ctx,1,"cancelled","")
+	if err!=nil{t.Fatalf("list: %v",err)}
+	if len(page.Items)!=1||page.NextCursor==""{t.Fatalf("first page = %+v, expected one item and next cursor",page)}
+	next,err:=db.List(ctx,1,"cancelled",page.NextCursor)
+	if err!=nil{t.Fatalf("list next page: %v",err)}
+	if len(next.Items)!=1||next.Items[0].ID==page.Items[0].ID{t.Fatalf("second page = %+v",next)}
+	replayed,err:=db.Replay(ctx,first.ID)
+	if err!=nil{t.Fatalf("replay: %v",err)}
+	if replayed.ID==first.ID||replayed.Status!="pending"||replayed.Attempts!=0{t.Fatalf("unexpected replay: %+v",replayed)}
+	if _,err=db.Replay(ctx,replayed.ID);!errors.Is(err,ErrInvalidTransition){t.Fatalf("replay of pending job error = %v, want ErrInvalidTransition",err)}
+}

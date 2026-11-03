@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -28,6 +29,9 @@ func TestEnqueueIdempotencyLeaseRenewalAndRecovery(t *testing.T) {
 	first,err:=db.Enqueue(ctx,"noop",payload,key,3,time.Now().UTC());if err!=nil{t.Fatalf("Enqueue(): %v",err)}
 	second,err:=db.Enqueue(ctx,"noop",payload,key,3,time.Now().UTC());if err!=nil{t.Fatalf("idempotent Enqueue(): %v",err)}
 	if first.ID!=second.ID{t.Fatalf("idempotency returned different IDs: %s != %s",first.ID,second.ID)}
+	if _,err:=db.Enqueue(ctx,"noop",json.RawMessage(`{"test":"different"}`),key,3,time.Now().UTC());!errors.Is(err,ErrIdempotencyConflict){
+		t.Fatalf("expected ErrIdempotencyConflict for changed payload, got %v",err)
+	}
 
 	claimed,err:=db.Claim(ctx,"integration-worker-1",30*time.Second);if err!=nil{t.Fatalf("Claim(): %v",err)}
 	if claimed.ID!=first.ID{t.Fatalf("claimed ID = %s, want %s",claimed.ID,first.ID)}

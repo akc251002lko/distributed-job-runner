@@ -65,9 +65,9 @@ Replay is allowed only for succeeded, dead, or cancelled jobs. It creates a new 
 ## Authentication and rate limiting
 
 - Set API_TOKEN for one shared bearer credential.
-- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs are tenant boundaries: jobs can only be listed, read, cancelled, or replayed by their owning client. Idempotency keys are scoped per client, and each client receives an independent rate-limit bucket. PostgreSQL row-level security enforces ownership using transaction-local client identity.
-- API_RATE_LIMIT_RPS and API_RATE_LIMIT_BURST configure the in-process token bucket (defaults 10 and 20).
-- Rate limits are per API process, not globally coordinated across replicas. Put a gateway/shared limiter in front of a horizontally scaled public API.
+- Or set API_KEYS as comma-separated client_id=token entries. Each token must contain at least 32 characters. Client IDs are tenant boundaries: jobs can only be listed, read, cancelled, or replayed by their owning client. Idempotency keys are scoped per client, and each client receives an independent PostgreSQL-backed rate-limit bucket. PostgreSQL row-level security enforces ownership using transaction-local client identity.
+- API_RATE_LIMIT_RPS and API_RATE_LIMIT_BURST configure the PostgreSQL-backed token bucket (defaults 10 and 20).
+- Rate limits are stored in PostgreSQL and shared across API replicas. If PostgreSQL is unavailable, protected API requests fail closed with HTTP 503.
 - Health/readiness/metrics are not protected by bearer authentication; restrict their network exposure.
 
 ## Worker handlers and concurrency
@@ -83,6 +83,7 @@ Apply migrations in order as a database owner:
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000002_job_cancellation.sql
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000003_client_scoping.sql
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/000004_api_rate_limits.sql
 
 Provision separate API and worker roles using strong unique passwords:
 
@@ -104,7 +105,7 @@ Commands: make test, make test-race, make vet, make build, make migrate-up, make
 
 Execution is at-least-once, not exactly-once. A worker may perform a side effect and crash before committing success. Use downstream idempotency keys or transactional outbox patterns for external effects.
 
-Trace Context is propagated and request IDs are logged, but this MVP does not export spans to an OpenTelemetry collector. Rate limiting is process-local. Handler registration is compiled into the worker binary. Cancellation is cooperative and cannot terminate a handler that ignores context cancellation.
+Trace Context is propagated and request IDs are logged, but this MVP does not export spans to an OpenTelemetry collector. Rate limiting is PostgreSQL-backed and shared across replicas. Handler registration is compiled into the worker binary. Cancellation is cooperative and cannot terminate a handler that ignores context cancellation.
 
 Compose credentials are for local development only. Production requires TLS, secret management, private networking, backups, monitoring, resource limits, migration/rollback procedures, and a security review. See SECURITY.md and docs/runbook.md.
 

@@ -15,7 +15,7 @@ This project is an MVP and is not independently audited. Do not expose the devel
 - Provision djr_api and djr_worker using ops/postgres/roles.sql; never run application processes as the database owner.
 - Store secrets in a secret manager and rotate them.
 - Restrict health and metrics endpoints to trusted monitoring networks.
-- Apply resource limits and request gateway controls. The built-in rate limiter is process-local.
+- Apply resource limits and request gateway controls. Per-client token-bucket limits are shared through PostgreSQL; database outages fail closed.
 - Back up PostgreSQL and test restoration.
 - Review migrations and rollback procedures before deployment.
 

@@ -21,6 +21,7 @@ migrate-up:
 	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000001_init.sql
 	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000002_job_cancellation.sql
 	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000003_client_scoping.sql
+	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -f migrations/000004_api_rate_limits.sql
 
 provision-roles:
 	psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -v api_password="$(API_DB_PASSWORD)" -v worker_password="$(WORKER_DB_PASSWORD)" -f ops/postgres/roles.sql

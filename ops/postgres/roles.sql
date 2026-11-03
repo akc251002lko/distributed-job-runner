@@ -27,3 +27,9 @@ CREATE POLICY jobs_api_tenant_isolation ON jobs FOR ALL TO djr_api
 DROP POLICY IF EXISTS jobs_worker_access ON jobs;
 CREATE POLICY jobs_worker_access ON jobs FOR ALL TO djr_worker
   USING (true) WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE ON TABLE api_rate_limits TO djr_api;
+DROP POLICY IF EXISTS api_rate_limits_tenant_isolation ON api_rate_limits;
+CREATE POLICY api_rate_limits_tenant_isolation ON api_rate_limits FOR ALL TO djr_api
+  USING (client_id = current_setting('app.client_id', true))
+  WITH CHECK (client_id = current_setting('app.client_id', true));

@@ -18,7 +18,7 @@ POST to /v1/jobs/{id}/replay to create a fresh job from a succeeded, dead, or ca
 
 Set WORKER_CONCURRENCY between 1 and 256 for per-process handler concurrency. Scale worker replicas horizontally. Choose lease duration based on database latency and scheduling delays; heartbeat interval is one-third of the lease. Each worker process exposes its own metrics endpoint, so scrape every replica.
 
-API token-bucket limits are per process. For multiple API replicas, enforce global quotas at an API gateway or shared limiter.
+API token-bucket limits are shared through PostgreSQL across API replicas. A database outage fails protected API requests closed with HTTP 503.
 
 ## Troubleshooting
 

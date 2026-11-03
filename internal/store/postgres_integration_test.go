@@ -162,3 +162,23 @@ func TestWorkerDatabaseRoleCanClaimAndCompleteAcrossClients(t *testing.T) {
 	}
 	if !targetClaimed{t.Fatalf("worker role did not claim submitted job %s",job.ID)}
 }
+
+
+func TestPostgresRateLimitIsSharedAcrossAPIConnections(t *testing.T) {
+	dsn:=os.Getenv("API_DATABASE_URL")
+	if dsn==""{t.Skip("API_DATABASE_URL is not set")}
+	ctx,cancel:=context.WithTimeout(context.Background(),20*time.Second)
+	t.Cleanup(cancel)
+	first,err:=Open(ctx,dsn)
+	if err!=nil{t.Fatalf("open first API pool: %v",err)}
+	t.Cleanup(first.Close)
+	second,err:=Open(ctx,dsn)
+	if err!=nil{t.Fatalf("open second API pool: %v",err)}
+	t.Cleanup(second.Close)
+	clientID:=fmt.Sprintf("ratelimit-%d",time.Now().UnixNano())
+	allowed,err:=first.AllowRateLimit(ctx,clientID,100,1)
+	if err!=nil||!allowed{t.Fatalf("first shared token allowed=%v err=%v",allowed,err)}
+	allowed,err=second.AllowRateLimit(ctx,clientID,100,1)
+	if err!=nil{t.Fatalf("second shared token error: %v",err)}
+	if allowed{t.Fatal("second API connection bypassed shared burst limit")}
+}

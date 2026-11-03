@@ -9,7 +9,7 @@ Assets include job payloads/state, client credentials, database credentials, lea
 | Risk | Current control | Residual risk |
 |---|---|---|
 | Unauthorized API use | Bearer token or per-client API keys; constant-time comparison and client-scoped job access | Credential rotation and external identity provider not included |
-| Request abuse | 1 MiB body limit, strict JSON, per-client token bucket | Rate limiter is per process; use gateway/shared limiter for replicas |
+| Request abuse | 1 MiB body limit, strict JSON, per-client token bucket | PostgreSQL-backed per-client token bucket shared across replicas; database outage fails closed |
 | SQL injection | Parameterized pgx queries | Review new query paths |
 | Excessive worker load | Configurable bounded concurrency | Handler-specific resource limits remain application responsibility |
 | Stale worker writes | Lease-token fencing and heartbeat renewal | External side effects require idempotency |

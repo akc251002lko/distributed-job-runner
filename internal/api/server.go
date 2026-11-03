@@ -50,6 +50,7 @@ func(s *Server) enqueue(w http.ResponseWriter,r *http.Request){
 	key:=in.IdempotencyKey;if key==""{key=r.Header.Get("Idempotency-Key")}
 	if len(key)>255{writeError(w,http.StatusBadRequest,"idempotency key must be at most 255 characters");return}
 	result,err:=s.store.Enqueue(r.Context(),in.Type,in.Payload,key,in.MaxAttempts,runAt)
+	if errors.Is(err,store.ErrIdempotencyConflict){writeError(w,http.StatusConflict,"idempotency key was already used with different job data");return}
 	if err!=nil{s.logger.Error("enqueue failed","error",err);writeError(w,http.StatusInternalServerError,"could not enqueue job");return}
 	observability.Default.JobsEnqueued.Add(1)
 	writeJSON(w,http.StatusAccepted,result)

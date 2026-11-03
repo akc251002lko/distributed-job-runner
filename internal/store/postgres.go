@@ -19,18 +19,6 @@ func(s *Store)AllowRateLimit(ctx context.Context,clientID string,rate float64,bu
 	if err=tx.Commit(ctx);err!=nil{return false,err}
 	return true,nil
 }
-func(s *Store)AllowRateLimit(ctx context.Context,clientID string,rate float64,burst int)(bool,error){
-	if rate<=0||burst<1{return false,errors.New("invalid rate limit configuration")}
-	tx,err:=s.beginClientTx(ctx,clientID);if err!=nil{return false,err}
-	defer func(){_ = tx.Rollback(ctx)}()
-	q:="INSERT INTO api_rate_limits(client_id,tokens,updated_at) VALUES($1,GREATEST($2-1,0),now()) ON CONFLICT(client_id) DO UPDATE SET tokens=LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (now()-api_rate_limits.updated_at))::double precision*$3))-1,updated_at=now() WHERE LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (now()-api_rate_limits.updated_at))::double precision*$3))>=1 RETURNING tokens"
-	var remaining float64
-	err=tx.QueryRow(ctx,q,clientID,float64(burst),rate).Scan(&remaining)
-	if errors.Is(err,pgx.ErrNoRows){return false,nil}
-	if err!=nil{return false,err}
-	if err=tx.Commit(ctx);err!=nil{return false,err}
-	return true,nil
-}
 func(s *Store)beginClientTx(ctx context.Context,clientID string)(pgx.Tx,error){if !validClientID(clientID){return nil,errors.New("invalid client ID")};tx,err:=s.pool.Begin(ctx);if err!=nil{return nil,err};if _,err=tx.Exec(ctx,"SELECT set_config('app.client_id',$1,true)",clientID);err!=nil{_ = tx.Rollback(ctx);return nil,err};return tx,nil}
 func(s *Store)Enqueue(ctx context.Context,kind string,payload json.RawMessage,key string,max int,runAt time.Time)(job.Job,error){return s.EnqueueForClient(ctx,"default",kind,payload,key,max,runAt)}
 func(s *Store)EnqueueForClient(ctx context.Context,clientID,kind string,payload json.RawMessage,key string,max int,runAt time.Time)(job.Job,error){tx,err:=s.beginClientTx(ctx,clientID);if err!=nil{return job.Job{},err};defer func(){_ = tx.Rollback(ctx)}();id,err:=newID();if err!=nil{return job.Job{},err};q:="INSERT INTO jobs(id,client_id,job_type,payload,idempotency_key,status,max_attempts,run_at) VALUES($1,$2,$3,$4,NULLIF($5,''),'pending',$6,$7) ON CONFLICT(client_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE jobs.job_type=EXCLUDED.job_type AND jobs.payload=EXCLUDED.payload AND jobs.max_attempts=EXCLUDED.max_attempts RETURNING id,job_type,payload,status,attempts,max_attempts,run_at,created_at,updated_at,lease_expires_at,COALESCE(last_error,''),COALESCE(worker_id,'')";j,err:=scan(tx.QueryRow(ctx,q,id,clientID,kind,[]byte(payload),key,max,runAt));if errors.Is(err,pgx.ErrNoRows){return job.Job{},ErrIdempotencyConflict};if err!=nil{return job.Job{},err};if err=tx.Commit(ctx);err!=nil{return job.Job{},err};return j,nil}

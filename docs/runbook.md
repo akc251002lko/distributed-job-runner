@@ -27,7 +27,7 @@ API token-bucket limits are shared through PostgreSQL across API replicas. A dat
 - Jobs dead: inspect last_error, attempts, and max_attempts.
 - Jobs repeatedly reclaimed: inspect worker restarts, handler cancellation behavior, database latency, CPU starvation, and lease duration.
 - 401: verify bearer token or API_KEYS client mapping.
-- 429: tune per-process RPS/burst or enforce shared limits at the gateway.
+- 429: tune API_RATE_LIMIT_RPS and API_RATE_LIMIT_BURST, and inspect the per-client PostgreSQL token bucket.
 - Database permission denied: verify API/worker connection strings use matching roles and re-run grants as migration owner.
 
 ## Shutdown and recovery

@@ -18,7 +18,7 @@ The worker registry maps a bounded job type name to a Go handler accepting conte
 
 ## API security and tracing
 
-Bearer credentials can be configured as one API token or a list of client IDs and tokens. Tokens are compared in constant time. Each authenticated client has a token-bucket limiter in each API process. Job reads, listing, cancellation, replay, and idempotency are scoped to the authenticated client ID. Rate-limit buckets are stored in PostgreSQL under the same tenant RLS policy, so API replicas share the per-client quota.
+Bearer credentials can be configured as one API token or a list of client IDs and tokens. Tokens are compared in constant time. Each authenticated client has a PostgreSQL-backed token-bucket limiter shared across API processes. Job reads, listing, cancellation, replay, and idempotency are scoped to the authenticated client ID. Rate-limit buckets are stored in PostgreSQL under the same tenant RLS policy, so API replicas share the per-client quota.
 
 The HTTP middleware accepts W3C traceparent context, creates a trace ID when absent, returns X-Request-ID, and logs the trace ID. There is no span exporter in this MVP.
 
@@ -36,4 +36,4 @@ The migration owner provisions djr_api and djr_worker. The API role can select/i
 
 ## Remaining production integration
 
-Use an external OpenTelemetry exporter, gateway/shared rate limiter, secret manager, TLS, backup/restore drills, and deployment-specific resource policies before public production use.
+Use an external OpenTelemetry exporter, secret manager, TLS, backup/restore drills, and deployment-specific resource policies before public production use.

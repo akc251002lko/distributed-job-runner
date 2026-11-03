@@ -1,0 +1,28 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/akc251002lko/distributed-job-runner/internal/api"
+	"github.com/akc251002lko/distributed-job-runner/internal/config"
+	"github.com/akc251002lko/distributed-job-runner/internal/store"
+)
+func main(){logger:=slog.New(slog.NewJSONHandler(os.Stdout,nil));if err:=run(logger);err!=nil{logger.Error("api stopped","error",err);os.Exit(1)}}
+func run(logger *slog.Logger)error{
+	cfg,err:=config.Load();if err!=nil{return err}
+	ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
+	db,err:=store.Open(ctx,cfg.DatabaseURL);if err!=nil{return err};defer db.Close()
+	srv:=&http.Server{Addr:cfg.APIAddr,Handler:api.New(db,logger,cfg.APIToken),ReadHeaderTimeout:5*time.Second,ReadTimeout:10*time.Second,WriteTimeout:15*time.Second,IdleTimeout:60*time.Second}
+	errCh:=make(chan error,1);go func(){logger.Info("api listening","addr",cfg.APIAddr);if e:=srv.ListenAndServe();e!=nil&&!errors.Is(e,http.ErrServerClosed){errCh<-e};close(errCh)}()
+	select{
+	case<-ctx.Done():shutdown,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();return srv.Shutdown(shutdown)
+	case serveErr:=<-errCh:return serveErr
+	}
+}

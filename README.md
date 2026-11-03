@@ -2,46 +2,71 @@
 
 A durable, PostgreSQL-backed distributed job processing system written in Go.
 
-> **Status:** Initial development. Interfaces and operational behavior may change before the first stable release.
+> **Status:** Early development. Review the known limitations below before using this outside local development.
 
-## Goals
+## Current capabilities
 
-- Accept and inspect jobs through a versioned HTTP API.
-- Persist job state in PostgreSQL so queued work survives process restarts.
-- Claim work safely across concurrent workers using PostgreSQL row locking.
-- Provide at-least-once execution with bounded retries, exponential backoff, and jitter.
-- Prevent stale workers from completing jobs after their lease has been replaced.
-- Support idempotency keys, worker heartbeats, lease recovery, and a dead-letter state.
-- Shut down gracefully and expose health, readiness, structured logs, and metrics.
+- Versioned HTTP API to enqueue and inspect jobs.
+- PostgreSQL 16 as the durable source of truth.
+- Concurrent-safe claims using `FOR UPDATE SKIP LOCKED`.
+- Idempotency keys and bounded retry scheduling with exponential backoff and jitter.
+- Renewable worker leases with fencing tokens; expired leases can be recovered safely.
+- Dead-letter transition after retry exhaustion, including a worker that disappears during its final attempt.
+- Structured JSON logs, health/readiness endpoints, and dependency-free Prometheus metrics.
+- Docker Compose local stack and GitHub Actions CI.
 
 ## Architecture
 
-The initial implementation is organized around three executables:
-
 - `cmd/api` — HTTP API for submitting and inspecting jobs.
 - `cmd/worker` — worker process that claims and executes jobs.
-- `cmd/djr` — administrative command-line interface.
+- `internal/api`, `internal/store`, `internal/worker`, `internal/config`, `internal/observability` — application components.
+- `migrations/` — versioned PostgreSQL schema.
 
-Core packages live under `internal/`; database migrations are versioned under `migrations/`. PostgreSQL is the durable source of truth. Workers use short transactions and lease fencing to coordinate concurrent execution.
+The API and worker are independent processes. PostgreSQL coordinates workers; no in-memory queue is authoritative.
+
+## API
+
+- `GET /healthz` — process health.
+- `GET /readyz` — PostgreSQL readiness.
+- `GET /metrics` — Prometheus text metrics for the API process.
+- `POST /v1/jobs` — enqueue a job.
+- `GET /v1/jobs/{id}` — inspect a job.
+
+Example:
+
+```sh
+curl -sS -X POST http://localhost:8080/v1/jobs \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: sample-001' \
+  -d '{"type":"noop","payload":{"source":"readme"}}'
+```
+
+If `API_TOKEN` is configured, send `Authorization: Bearer <token>`. The worker metrics endpoint is available at `http://localhost:9090/metrics` in the local Compose stack.
 
 ## Delivery semantics
 
-The system targets **at-least-once execution**, not exactly-once execution. A worker can complete an external side effect and crash before recording success. Job handlers must therefore make side effects idempotent or use a downstream idempotency mechanism. Lease tokens fence off stale workers from mutating the job record after ownership changes.
+The system provides **at-least-once execution**, not exactly-once side effects. A worker can perform an external side effect and crash before recording success. Handlers must therefore be idempotent or use downstream idempotency. Lease tokens prevent stale workers from changing job state after ownership changes; lease renewal keeps long-running handlers alive while they retain ownership.
 
-## Development
+## Local development
 
-The local development stack uses Docker Compose and PostgreSQL 16. See the project documentation and Makefile for setup, migrations, tests, and operational commands as those components land.
+Requirements: Go 1.22+ and Docker Compose.
+
+1. Copy `.env.example` to `.env` if running binaries outside Compose.
+2. Start the stack with `docker compose up --build`.
+3. Check `http://localhost:8080/healthz` and `http://localhost:8080/readyz`.
+
+Useful commands: `make test`, `make test-race`, `make vet`, `make build`, and `make compose-down`.
 
 ## Security
 
-Do not commit credentials, production data, or real secrets. Copy `.env.example` to a local `.env` for development; `.env` is ignored by Git. The initial stack is intended for local development and must not be exposed to untrusted networks without authentication and deployment hardening.
+Do not commit credentials, production data, or real secrets. `.env` is ignored by Git. The Compose credentials and unauthenticated local API defaults are for development only. Production requires API authentication, TLS, private networking, secret management, restricted database roles, backups, and monitoring.
 
 Report suspected vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
-## Project status
+## Known MVP limitations
 
-This repository is being built incrementally. The first milestone establishes the Go module, database schema, configuration, API and worker foundations, local PostgreSQL stack, CI, tests, and contributor/security documentation.
+The initial worker registers only short `noop` and `echo` handlers. A production handler registry, bounded concurrent execution, graceful cancellation hooks for arbitrary handlers, pagination, job cancellation/replay, per-client authorization/rate limits, tracing, and production-grade database roles remain future work. The current lease heartbeat is active during handler execution, but handler-specific idempotency remains mandatory.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).

@@ -40,6 +40,10 @@ jobs:
         with:
           go-version: "1.22.x"
           cache: true
+      - name: Download Go dependencies
+        run: go mod download
+      - name: Capture module checksums
+        run: cat go.sum
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Apply schema

@@ -181,4 +181,6 @@ func TestPostgresRateLimitIsSharedAcrossAPIConnections(t *testing.T) {
 	allowed,err=second.AllowRateLimit(ctx,clientID,100,1)
 	if err!=nil{t.Fatalf("second shared token error: %v",err)}
 	if allowed{t.Fatal("second API connection bypassed shared burst limit")}
+	otherAllowed,err:=second.AllowRateLimit(ctx,clientID+"-other",100,1)
+	if err!=nil||!otherAllowed{t.Fatalf("independent client bucket allowed=%v err=%v",otherAllowed,err)}
 }

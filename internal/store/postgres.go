@@ -11,6 +11,18 @@ func(s *Store)AllowRateLimit(ctx context.Context,clientID string,rate float64,bu
 	if rate<=0||burst<1{return false,errors.New("invalid rate limit configuration")}
 	tx,err:=s.beginClientTx(ctx,clientID);if err!=nil{return false,err}
 	defer func(){_ = tx.Rollback(ctx)}()
+	q:="INSERT INTO api_rate_limits(client_id,tokens,updated_at) VALUES($1,GREATEST($2-1,0),clock_timestamp()) ON CONFLICT(client_id) DO UPDATE SET tokens=LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (clock_timestamp()-api_rate_limits.updated_at))::double precision*$3))-1,updated_at=clock_timestamp() WHERE LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (clock_timestamp()-api_rate_limits.updated_at))::double precision*$3))>=1 RETURNING tokens"
+	var remaining float64
+	err=tx.QueryRow(ctx,q,clientID,float64(burst),rate).Scan(&remaining)
+	if errors.Is(err,pgx.ErrNoRows){return false,nil}
+	if err!=nil{return false,err}
+	if err=tx.Commit(ctx);err!=nil{return false,err}
+	return true,nil
+}
+func(s *Store)AllowRateLimit(ctx context.Context,clientID string,rate float64,burst int)(bool,error){
+	if rate<=0||burst<1{return false,errors.New("invalid rate limit configuration")}
+	tx,err:=s.beginClientTx(ctx,clientID);if err!=nil{return false,err}
+	defer func(){_ = tx.Rollback(ctx)}()
 	q:="INSERT INTO api_rate_limits(client_id,tokens,updated_at) VALUES($1,GREATEST($2-1,0),now()) ON CONFLICT(client_id) DO UPDATE SET tokens=LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (now()-api_rate_limits.updated_at))::double precision*$3))-1,updated_at=now() WHERE LEAST($2,api_rate_limits.tokens+GREATEST(0::double precision,EXTRACT(EPOCH FROM (now()-api_rate_limits.updated_at))::double precision*$3))>=1 RETURNING tokens"
 	var remaining float64
 	err=tx.QueryRow(ctx,q,clientID,float64(burst),rate).Scan(&remaining)

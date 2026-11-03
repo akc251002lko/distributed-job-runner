@@ -131,6 +131,6 @@ GitHub Actions provisions PostgreSQL 16 and verifies migrations, application-rol
 
 Apache License 2.0. See LICENSE.
 
-## Community & Updates
+## Community
 
-Join the [Telegram community](https://t.me/githubakc251002lko) for the latest repository updates, project announcements, discussions, support, and more.
+For project announcements, repository updates, technical discussions, questions, and collaboration, visit the [official Telegram channel](https://t.me/githubakc251002lko).

@@ -130,3 +130,7 @@ GitHub Actions provisions PostgreSQL 16 and verifies migrations, application-rol
 ## License
 
 Apache License 2.0. See LICENSE.
+
+---
+
+**Maintained by [Arun Kumar](https://github.com/akc251002lko).**

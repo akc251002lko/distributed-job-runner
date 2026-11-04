@@ -1,6 +1,6 @@
 -- Execute as a database owner/superuser after migrations.
 -- Supply secrets with: psql "$DATABASE_URL" -v api_password='...' -v worker_password='...' -f ops/postgres/roles.sql
-DO $$
+DO $roles$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'djr_api') THEN
     CREATE ROLE djr_api LOGIN;
@@ -9,7 +9,7 @@ BEGIN
     CREATE ROLE djr_worker LOGIN;
   END IF;
 END
-$;
+$roles$;
 ALTER ROLE djr_api WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 ALTER ROLE djr_worker WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
 ALTER ROLE djr_api PASSWORD :'api_password';

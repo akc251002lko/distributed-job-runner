@@ -65,6 +65,10 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Verify application role attributes
+        run: |
+          result=$(psql "$DATABASE_URL" -At -c "SELECT count(*) = 2 AND bool_and(rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls AND NOT rolinherit) FROM pg_roles WHERE rolname IN ('djr_api','djr_worker')")
+          test "$result" = "t"
       - name: Verify API role privileges
         run: |
           result=$(PGPASSWORD="$API_DB_PASSWORD" psql "$API_DATABASE_URL" -At -c "SELECT has_table_privilege(current_user,'jobs','SELECT') AND has_table_privilege(current_user,'jobs','INSERT') AND has_column_privilege(current_user,'jobs','status','UPDATE') AND has_table_privilege(current_user,'api_rate_limits','SELECT') AND has_table_privilege(current_user,'api_rate_limits','INSERT') AND has_table_privilege(current_user,'api_rate_limits','UPDATE') AND NOT has_table_privilege(current_user,'jobs','DELETE') AND NOT has_column_privilege(current_user,'jobs','payload','UPDATE')")

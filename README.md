@@ -21,7 +21,7 @@ This repository is a reference implementation of a durable, PostgreSQL-backed jo
 
 ## How to Use
 
-For local development, review `.env.example`, ensure Go 1.22+ and Docker Compose are available, then start the stack with:
+For local development, review `.env.example`, ensure Go 1.26+ and Docker Compose are available, then start the stack with:
 
 ```bash
 docker compose up --build
@@ -107,7 +107,7 @@ Configure API_DATABASE_URL and WORKER_DATABASE_URL separately. Production mode r
 
 ## Local development
 
-Requirements: Go 1.22+ and Docker Compose.
+Requirements: Go 1.26+ and Docker Compose.
 
 1. Review local-only credentials in .env.example.
 2. Start with docker compose up --build.

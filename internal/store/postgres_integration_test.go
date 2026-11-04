@@ -188,3 +188,12 @@ func TestPostgresRateLimitIsSharedAcrossAPIConnections(t *testing.T) {
 	otherAllowed,err:=second.AllowRateLimit(ctx,clientID+"-other",100,1)
 	if err!=nil||!otherAllowed{t.Fatalf("independent client bucket allowed=%v err=%v",otherAllowed,err)}
 }
+
+
+func TestListRejectsMalformedCursor(t *testing.T) {
+	db, ctx := integrationStore(t)
+	_, err := db.List(ctx, 10, "", "not-a-valid-base64-cursor!")
+	if !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("List() error = %v, want ErrInvalidCursor", err)
+	}
+}

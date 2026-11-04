@@ -15,7 +15,10 @@ func TestEnqueueRejectsWhitespacePaddedType(t *testing.T) {
 }
 
 func TestListErrorClassification(t *testing.T) {
-	if !errors.Is(store.ErrInvalidCursor, store.ErrInvalidCursor) {
-		t.Fatal("invalid cursor sentinel is not comparable")
+	if got := listErrorStatus(store.ErrInvalidCursor); got != http.StatusBadRequest {
+		t.Fatalf("invalid cursor status = %d, want 400", got)
+	}
+	if got := listErrorStatus(errors.New("database unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("database error status = %d, want 500", got)
 	}
 }

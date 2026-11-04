@@ -19,7 +19,7 @@ A durable PostgreSQL-backed distributed job processing service written in Go.
 
 This repository is a reference implementation of a durable, PostgreSQL-backed job-processing service. It is intended for applications that need to enqueue background work over HTTP and process it asynchronously with multiple worker processes, retry and recovery behavior, tenant isolation, and operational visibility. Execution is at-least-once, so application handlers must be designed for idempotency.
 
-## How to Use
+## How To Use
 
 For local development, review `.env.example`, ensure Go 1.26+ and Docker Compose are available, then start the stack with:
 

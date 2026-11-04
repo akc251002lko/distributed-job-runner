@@ -14,3 +14,26 @@ func TestAPIKeyClientIDsAreValidated(t *testing.T) {
 	t.Setenv("API_KEYS","mobile=0123456789abcdef0123456789abcdef,mobile=abcdef0123456789abcdef0123456789")
 	if _,err:=Load();err==nil{t.Fatal("duplicate client ID accepted")}
 }
+
+func TestAPIKeyTokensMustBeUnique(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://localhost/djr")
+	token := "0123456789abcdef0123456789abcdef"
+	t.Setenv("API_KEYS", "client-a="+token+",client-b="+token)
+	if _, err := Load(); err == nil {
+		t.Fatal("duplicate bearer token assigned to multiple clients was accepted")
+	}
+}
+
+func TestRateLimitRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf"} {
+		t.Run(value, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv("DATABASE_URL", "postgres://localhost/djr")
+			t.Setenv("API_RATE_LIMIT_RPS", value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("non-finite rate limit %q was accepted", value)
+			}
+		})
+	}
+}

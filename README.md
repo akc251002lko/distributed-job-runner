@@ -121,7 +121,7 @@ Execution is at-least-once, not exactly-once. A worker may perform a side effect
 
 Trace Context is propagated and request IDs are logged, but this MVP does not export spans to an OpenTelemetry collector. Rate limiting is PostgreSQL-backed and shared across replicas. Handler registration is compiled into the worker binary. Cancellation is cooperative and cannot terminate a handler that ignores context cancellation.
 
-Compose credentials are for local development only. Production requires TLS, secret management, private networking, backups, monitoring, resource limits, migration/rollback procedures, and a security review. See SECURITY.md and docs/runbook.md.
+Compose credentials are for local development only. The API process speaks HTTP; production deployments must terminate client TLS at a trusted reverse proxy or load balancer and keep the API listener on a private network. Production database connections are separately enforced to use TLS. Production also requires secret management, backups, monitoring, resource limits, migration/rollback procedures, and a security review. See SECURITY.md and docs/runbook.md.
 
 ## Validation
 

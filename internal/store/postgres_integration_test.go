@@ -26,9 +26,13 @@ func TestEnqueueIdempotencyLeaseRenewalAndRecovery(t *testing.T) {
 	db,ctx:=integrationStore(t)
 	key:=fmt.Sprintf("integration-%d",time.Now().UnixNano())
 	payload:=json.RawMessage(`{"test":true}`)
-	first,err:=db.Enqueue(ctx,"noop",payload,key,3,time.Now().UTC());if err!=nil{t.Fatalf("Enqueue(): %v",err)}
-	second,err:=db.Enqueue(ctx,"noop",payload,key,3,time.Now().UTC());if err!=nil{t.Fatalf("idempotent Enqueue(): %v",err)}
+	runAt:=time.Now().UTC()
+	first,err:=db.Enqueue(ctx,"noop",payload,key,3,runAt);if err!=nil{t.Fatalf("Enqueue(): %v",err)}
+	second,err:=db.Enqueue(ctx,"noop",payload,key,3,runAt);if err!=nil{t.Fatalf("idempotent Enqueue(): %v",err)}
 	if first.ID!=second.ID{t.Fatalf("idempotency returned different IDs: %s != %s",first.ID,second.ID)}
+	if _,err:=db.Enqueue(ctx,"noop",payload,key,3,runAt.Add(time.Hour));!errors.Is(err,ErrIdempotencyConflict){
+		t.Fatalf("expected ErrIdempotencyConflict for changed scheduled time, got %v",err)
+	}
 	if _,err:=db.Enqueue(ctx,"noop",json.RawMessage(`{"test":"different"}`),key,3,time.Now().UTC());!errors.Is(err,ErrIdempotencyConflict){
 		t.Fatalf("expected ErrIdempotencyConflict for changed payload, got %v",err)
 	}

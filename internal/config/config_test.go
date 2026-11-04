@@ -83,7 +83,7 @@ func TestRateLimitRejectsNonFiniteValues(t *testing.T) {
 func TestPollIntervalCannotOverflowLeaseValidation(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DATABASE_URL", "postgres://localhost/djr")
-	t.Setenv("POLL_INTERVAL", "2000000000h")
+	t.Setenv("POLL_INTERVAL", "2000000h")
 	if _, err := Load(); err == nil {
 		t.Fatal("overflowing poll interval was accepted")
 	}

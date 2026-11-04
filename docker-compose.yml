@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: djr_owner
       POSTGRES_PASSWORD: djr-owner-local-only
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -50,7 +50,7 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
   worker:
     build:
@@ -66,7 +66,7 @@ services:
       LEASE_DURATION: 30s
       WORKER_METRICS_ADDR: :9090
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on:
       migrate:
         condition: service_completed_successfully

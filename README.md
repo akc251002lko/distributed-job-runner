@@ -103,7 +103,7 @@ Provision separate API and worker roles using strong unique passwords:
 
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v api_password="$API_DB_PASSWORD" -v worker_password="$WORKER_DB_PASSWORD" -f ops/postgres/roles.sql
 
-Configure API_DATABASE_URL and WORKER_DATABASE_URL separately. Production mode rejects the shared DATABASE_URL fallback. API role can select/insert and cancel jobs under row-level security; worker role can select and update execution state across tenants. Keep migration credentials separate and never use the database owner in application processes.
+Configure API_DATABASE_URL and WORKER_DATABASE_URL separately with distinct database role usernames. Production mode rejects the shared DATABASE_URL fallback and requires encrypted PostgreSQL connections (`sslmode=require`, `verify-ca`, or `verify-full`). Prefer `verify-full` where certificate and hostname verification are available. API role can select/insert and cancel jobs under row-level security; worker role can select and update execution state across tenants. Keep migration credentials separate and never use the database owner in application processes.
 
 ## Local development
 

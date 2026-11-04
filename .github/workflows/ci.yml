@@ -40,7 +40,7 @@ jobs:
       WORKER_DB_PASSWORD: local-worker-ci
       APP_ENV: development
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}

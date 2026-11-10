@@ -180,12 +180,13 @@ func TestPostgresRateLimitIsSharedAcrossAPIConnections(t *testing.T) {
 	if err!=nil{t.Fatalf("open second API pool: %v",err)}
 	t.Cleanup(second.Close)
 	clientID:=fmt.Sprintf("ratelimit-%d",time.Now().UnixNano())
-	allowed,err:=first.AllowRateLimit(ctx,clientID,100,1)
+	// Keep the refill interval far above test execution time to avoid a timing race.
+	allowed,err:=first.AllowRateLimit(ctx,clientID,0.001,1)
 	if err!=nil||!allowed{t.Fatalf("first shared token allowed=%v err=%v",allowed,err)}
-	allowed,err=second.AllowRateLimit(ctx,clientID,100,1)
+	allowed,err=second.AllowRateLimit(ctx,clientID,0.001,1)
 	if err!=nil{t.Fatalf("second shared token error: %v",err)}
 	if allowed{t.Fatal("second API connection bypassed shared burst limit")}
-	otherAllowed,err:=second.AllowRateLimit(ctx,clientID+"-other",100,1)
+	otherAllowed,err:=second.AllowRateLimit(ctx,clientID+"-other",0.001,1)
 	if err!=nil||!otherAllowed{t.Fatalf("independent client bucket allowed=%v err=%v",otherAllowed,err)}
 }
 
